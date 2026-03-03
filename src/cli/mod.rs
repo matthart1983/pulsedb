@@ -25,6 +25,8 @@ pub enum Commands {
         memtable_size: usize,
         #[arg(long, default_value = "3600")]
         segment_duration: u64,
+        #[arg(long, default_value = "0")]
+        retention: u64,
         #[arg(long, default_value = "info")]
         log_level: String,
     },

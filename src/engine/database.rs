@@ -6,7 +6,7 @@ use parking_lot::RwLock;
 use tracing::info;
 
 use crate::index::{InvertedIndex, SeriesIndex};
-use crate::model::{DataPoint, FieldValue, Tags};
+use crate::model::{DataPoint, FieldValue, SchemaRegistry, Tags};
 use crate::query::aggregator::QueryResult;
 use crate::storage::{PartitionManager, SegmentCache, SegmentMeta, SegmentWriter};
 
@@ -24,6 +24,7 @@ pub struct Database {
     inverted_index: RwLock<InvertedIndex>,
     segment_cache: RwLock<SegmentCache>,
     partition_mgr: PartitionManager,
+    schema_registry: SchemaRegistry,
 }
 
 impl Database {
@@ -59,6 +60,7 @@ impl Database {
             inverted_index: RwLock::new(InvertedIndex::new()),
             segment_cache: RwLock::new(SegmentCache::new()),
             partition_mgr,
+            schema_registry: SchemaRegistry::new(),
         })
     }
 
@@ -70,6 +72,11 @@ impl Database {
     pub fn write(&self, points: Vec<DataPoint>) -> Result<()> {
         if points.is_empty() {
             return Ok(());
+        }
+
+        // Validate schema before writing.
+        for point in &points {
+            self.schema_registry.validate(point)?;
         }
 
         // WAL first for durability.

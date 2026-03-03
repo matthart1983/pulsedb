@@ -44,6 +44,11 @@ pub struct EngineConfig {
     /// Default: 3600 (1 hour).
     #[serde(default = "default_segment_duration_secs")]
     pub segment_duration_secs: u64,
+
+    /// Retention duration in seconds. Partitions older than this are deleted.
+    /// 0 means no retention (keep everything).
+    #[serde(default)]
+    pub retention_secs: u64,
 }
 
 fn default_data_dir() -> PathBuf {
@@ -66,6 +71,7 @@ impl Default for EngineConfig {
             memtable_size_bytes: default_memtable_size_bytes(),
             wal_fsync: FsyncPolicy::default(),
             segment_duration_secs: default_segment_duration_secs(),
+            retention_secs: 0,
         }
     }
 }

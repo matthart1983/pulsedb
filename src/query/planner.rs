@@ -106,10 +106,24 @@ fn matches_tag_predicates(series_key: &str, clause: &WhereClause) -> bool {
                 match op {
                     CompOp::Eq => tag_val == value,
                     CompOp::Neq => tag_val != value,
+                    CompOp::RegexMatch => {
+                        if let Ok(re) = regex::Regex::new(value) {
+                            re.is_match(tag_val)
+                        } else {
+                            false
+                        }
+                    }
+                    CompOp::RegexNotMatch => {
+                        if let Ok(re) = regex::Regex::new(value) {
+                            !re.is_match(tag_val)
+                        } else {
+                            true
+                        }
+                    }
                     _ => true,
                 }
             } else {
-                matches!(op, CompOp::Neq)
+                matches!(op, CompOp::Neq | CompOp::RegexNotMatch)
             }
         }
         WhereClause::TimeComparison { .. } | WhereClause::TimeBetween { .. } => true,
@@ -422,5 +436,28 @@ mod tests {
         let plan = plan_query(&stmt, &index, &cache, &[], 5000).unwrap();
         assert_eq!(plan.series_keys, vec!["cpu,host=web1"]);
         assert_eq!(plan.time_range.0, 1501);
+    }
+
+    #[test]
+    fn regex_match_filters_series_keys() {
+        let clause = WhereClause::Comparison {
+            tag: "host".into(),
+            op: CompOp::RegexMatch,
+            value: r"web-\d+".into(),
+        };
+        assert!(matches_tag_predicates("cpu,host=web-1", &clause));
+        assert!(matches_tag_predicates("cpu,host=web-23", &clause));
+        assert!(!matches_tag_predicates("cpu,host=db-1", &clause));
+    }
+
+    #[test]
+    fn regex_not_match_excludes_series_keys() {
+        let clause = WhereClause::Comparison {
+            tag: "host".into(),
+            op: CompOp::RegexNotMatch,
+            value: "test".into(),
+        };
+        assert!(!matches_tag_predicates("cpu,host=test-server", &clause));
+        assert!(matches_tag_predicates("cpu,host=web-1", &clause));
     }
 }
