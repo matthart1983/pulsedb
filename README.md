@@ -16,6 +16,7 @@
 <p align="center">
   <a href="https://crates.io/crates/pulsedb"><img src="https://img.shields.io/crates/v/pulsedb.svg" alt="crates.io"></a>
   <a href="https://github.com/matthart1983/pulsedb/blob/main/LICENSE"><img src="https://img.shields.io/crates/l/pulsedb.svg" alt="License: MIT"></a>
+  <a href="https://github.com/matthart1983/pulsedb/wiki"><img src="https://img.shields.io/badge/docs-Wiki-blue?logo=github" alt="Wiki"></a>
 </p>
 
 <p align="center">
