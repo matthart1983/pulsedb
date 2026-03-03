@@ -105,6 +105,16 @@ impl Database {
         self.active.read().point_count()
     }
 
+    /// Number of unique series tracked by the series index.
+    pub fn series_count(&self) -> usize {
+        self.series_index.read().series_count()
+    }
+
+    /// Number of on-disk segments in the segment cache.
+    pub fn segment_count(&self) -> usize {
+        self.segment_cache.read().len()
+    }
+
     /// Execute a PulseQL query and return aggregated results.
     pub fn query(&self, sql: &str) -> Result<QueryResult> {
         let stmt = crate::query::parser::Parser::new(sql)?.parse()?;
@@ -113,7 +123,10 @@ impl Database {
         let plan = {
             let inv = self.inverted_index.read();
             let cache = self.segment_cache.read();
-            crate::query::planner::plan_query(&stmt, &inv, &cache, now_ns)?
+            let active = self.active.read();
+            let memtable_keys: Vec<String> =
+                active.iter_series().map(|(k, _)| k.clone()).collect();
+            crate::query::planner::plan_query(&stmt, &inv, &cache, &memtable_keys, now_ns)?
         };
 
         let rows = {

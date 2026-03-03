@@ -21,14 +21,27 @@ pub struct QueryPlan {
 }
 
 /// Build a query plan from a parsed SELECT statement.
+///
+/// `memtable_keys` provides series keys from the active memtable so that
+/// unflushed data is also discoverable by the planner.
 pub fn plan_query(
     stmt: &SelectStatement,
     inverted_index: &InvertedIndex,
     segment_cache: &SegmentCache,
+    memtable_keys: &[String],
     now_ns: i64,
 ) -> Result<QueryPlan> {
-    // 1. Collect all series keys for the measurement from the segment cache.
-    let all_keys = segment_cache.series_keys_for_measurement(&stmt.measurement);
+    // 1. Collect all series keys for the measurement from segments + memtable.
+    let mut all_keys = segment_cache.series_keys_for_measurement(&stmt.measurement);
+    for key in memtable_keys {
+        if key.starts_with(&stmt.measurement)
+            && (key.len() == stmt.measurement.len()
+                || key.as_bytes().get(stmt.measurement.len()) == Some(&b','))
+            && !all_keys.contains(key)
+        {
+            all_keys.push(key.clone());
+        }
+    }
 
     // 2. Filter by tag predicates from the WHERE clause.
     let series_keys = if let Some(ref cond) = stmt.condition {
@@ -286,7 +299,7 @@ mod tests {
         };
         let cache = make_cache();
         let index = make_index();
-        let plan = plan_query(&stmt, &index, &cache, 5000).unwrap();
+        let plan = plan_query(&stmt, &index, &cache, &[], 5000).unwrap();
         assert_eq!(plan.series_keys.len(), 2);
         assert!(plan.series_keys.contains(&"cpu,host=web1".to_string()));
         assert!(plan.series_keys.contains(&"cpu,host=web2".to_string()));
@@ -311,7 +324,7 @@ mod tests {
         };
         let cache = make_cache();
         let index = make_index();
-        let plan = plan_query(&stmt, &index, &cache, 5000).unwrap();
+        let plan = plan_query(&stmt, &index, &cache, &[], 5000).unwrap();
         assert_eq!(plan.series_keys, vec!["cpu,host=web1"]);
     }
 
@@ -336,7 +349,7 @@ mod tests {
         };
         let cache = make_cache();
         let index = make_index();
-        let plan = plan_query(&stmt, &index, &cache, now).unwrap();
+        let plan = plan_query(&stmt, &index, &cache, &[], now).unwrap();
         let expected_min = now - 5_000_000_000 + 1;
         assert_eq!(plan.time_range.0, expected_min);
         assert_eq!(plan.time_range.1, i64::MAX);
@@ -359,7 +372,7 @@ mod tests {
         };
         let cache = make_cache();
         let index = make_index();
-        let plan = plan_query(&stmt, &index, &cache, 1000).unwrap();
+        let plan = plan_query(&stmt, &index, &cache, &[], 1000).unwrap();
         assert_eq!(plan.time_range, (100, 500));
     }
 
@@ -377,7 +390,7 @@ mod tests {
         };
         let cache = make_cache();
         let index = make_index();
-        let plan = plan_query(&stmt, &index, &cache, 0).unwrap();
+        let plan = plan_query(&stmt, &index, &cache, &[], 0).unwrap();
         assert!(plan.order_desc);
         assert_eq!(plan.limit, Some(10));
     }
@@ -406,7 +419,7 @@ mod tests {
         };
         let cache = make_cache();
         let index = make_index();
-        let plan = plan_query(&stmt, &index, &cache, 5000).unwrap();
+        let plan = plan_query(&stmt, &index, &cache, &[], 5000).unwrap();
         assert_eq!(plan.series_keys, vec!["cpu,host=web1"]);
         assert_eq!(plan.time_range.0, 1501);
     }
