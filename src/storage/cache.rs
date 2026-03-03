@@ -64,6 +64,20 @@ impl SegmentCache {
         self.segments.is_empty()
     }
 
+    /// Return all unique series keys that start with the given measurement prefix.
+    pub fn series_keys_for_measurement(&self, measurement: &str) -> Vec<String> {
+        let prefix = format!("{},", measurement);
+        let mut keys: Vec<String> = self
+            .segments
+            .iter()
+            .filter(|s| s.series_key == measurement || s.series_key.starts_with(&prefix))
+            .map(|s| s.series_key.clone())
+            .collect();
+        keys.sort();
+        keys.dedup();
+        keys
+    }
+
     /// Remove metadata for a segment by path.
     pub fn remove(&mut self, path: &Path) {
         self.segments.retain(|s| s.path != path);

@@ -7,6 +7,7 @@ use tracing::info;
 
 use crate::index::{InvertedIndex, SeriesIndex};
 use crate::model::{DataPoint, FieldValue, Tags};
+use crate::query::aggregator::QueryResult;
 use crate::storage::{PartitionManager, SegmentCache, SegmentMeta, SegmentWriter};
 
 use super::config::EngineConfig;
@@ -102,6 +103,26 @@ impl Database {
     /// Total number of data points in the active memtable.
     pub fn point_count(&self) -> usize {
         self.active.read().point_count()
+    }
+
+    /// Execute a PulseQL query and return aggregated results.
+    pub fn query(&self, sql: &str) -> Result<QueryResult> {
+        let stmt = crate::query::parser::Parser::new(sql)?.parse()?;
+        let now_ns = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
+
+        let plan = {
+            let inv = self.inverted_index.read();
+            let cache = self.segment_cache.read();
+            crate::query::planner::plan_query(&stmt, &inv, &cache, now_ns)?
+        };
+
+        let rows = {
+            let cache = self.segment_cache.read();
+            let active = self.active.read();
+            crate::query::executor::execute(&plan, &cache, &active)?
+        };
+
+        crate::query::aggregator::aggregate(rows, &plan)
     }
 
     // --- internal ---
@@ -393,6 +414,44 @@ mod tests {
             fields["b"],
             vec![FieldValue::Integer(2), FieldValue::Integer(4)]
         );
+    }
+
+    #[test]
+    fn query_with_aggregation() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = test_config(dir.path());
+        cfg.memtable_size_bytes = 1; // trigger flush immediately
+
+        let db = Database::open(cfg).unwrap();
+
+        // Write data points that will be flushed to segments.
+        // Timestamps are nanoseconds; use 5-second intervals for GROUP BY time(5s).
+        let base_ns = 1_000_000_000_000i64; // 1e12 ns
+        let sec = 1_000_000_000i64;
+        let points: Vec<DataPoint> = (0..10)
+            .map(|i| DataPoint {
+                measurement: "cpu".into(),
+                tags: BTreeMap::from([("host".into(), "web1".into())]),
+                fields: BTreeMap::from([("usage".into(), FieldValue::Float(i as f64 * 10.0))]),
+                timestamp: base_ns + i as i64 * sec, // one point per second
+            })
+            .collect();
+
+        db.write(points).unwrap();
+
+        // Query: SELECT mean(usage) FROM cpu WHERE host = 'web1' GROUP BY time(5s)
+        let result = db
+            .query("SELECT mean(usage) FROM cpu WHERE host = 'web1' GROUP BY time(5s)")
+            .unwrap();
+
+        assert_eq!(result.name, "cpu");
+        // 10 points spread over 10 seconds → 2 buckets of 5s each
+        assert_eq!(result.rows.len(), 2);
+
+        // First bucket: values 0, 10, 20, 30, 40 → mean = 20
+        assert_eq!(result.rows[0].values["mean(usage)"], 20.0);
+        // Second bucket: values 50, 60, 70, 80, 90 → mean = 70
+        assert_eq!(result.rows[1].values["mean(usage)"], 70.0);
     }
 
     #[test]
