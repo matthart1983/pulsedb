@@ -1,16 +1,9 @@
-pub mod cli;
-pub mod encoding;
-pub mod engine;
-pub mod index;
-pub mod model;
-pub mod query;
-pub mod server;
-pub mod storage;
-
 use std::sync::Arc;
 
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
+
+use pulsedb::{cli, engine, server, storage};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

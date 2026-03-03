@@ -612,42 +612,38 @@ src/
 | Boolean codec | `encoding/boolean.rs` | 1 | 7 tests | Bit-packing |
 | WAL | `engine/wal.rs` | 1 | 4 tests | Append, recover, truncate with CRC32 |
 | MemTable | `engine/memtable.rs` | 1 | 4 tests | BTreeMap-based, freeze to immutable |
-| Database engine | `engine/database.rs` | 1 | 4 tests | Write path: WAL → memtable → freeze |
+| Database engine | `engine/database.rs` | 1 | 9 tests | Full write path: WAL → memtable → flush → segments |
 | Engine config | `engine/config.rs` | 1 | — | FsyncPolicy, data dirs, thresholds |
 | Segment storage | `storage/segment.rs` | 1 | 7 tests | Columnar write/read with LZ4 + type codecs |
 | Partitioning | `storage/partition.rs` | 1 | 5 tests | Hourly time partitions |
 | Segment cache | `storage/cache.rs` | 1 | 3 tests | In-memory metadata for query planning |
-| Compactor | `storage/compactor.rs` | 1 | — | Placeholder (stub) |
+| Compactor | `storage/compactor.rs` | 1 | 5 tests | Background segment merging within partitions |
+| Retention | `storage/retention.rs` | 1 | 3 tests | Auto-drop old partitions based on age |
 | Series index | `index/series.rs` | 1 | 6 tests | HashMap key → ID mapping |
-| Inverted index | `index/inverted.rs` | 1 | 11 tests | Tag posting lists, intersect, union |
+| Inverted index | `index/inverted.rs` | 1 | 11 tests | Tag posting lists, intersect, union, regex |
+| Line protocol | `server/protocol.rs` | 1 | 18 tests | Parse InfluxDB line protocol (all field types) |
+| PulseQL lexer | `query/lexer.rs` | 1 | 14 tests | Tokenize keywords, identifiers, operators, durations |
+| PulseQL parser | `query/parser.rs` | 1 | 12 tests | Recursive descent → AST |
+| AST types | `query/ast.rs` | 1 | — | SelectStatement, FieldExpr, AggFunc, WhereClause |
+| Query planner | `query/planner.rs` | 1 | 8 tests | Series resolution, segment pruning, time range |
+| Query executor | `query/executor.rs` | 1 | 6 tests | Segment scanning, memtable merge |
+| Aggregator | `query/aggregator.rs` | 1 | 12 tests | count/sum/mean/min/max + GROUP BY time/tag |
+| TCP server | `server/tcp.rs` | 1 | — | Tokio TcpListener on :8086, line protocol |
+| HTTP server | `server/http.rs` | 1 | — | Axum on :8087: /query, /write, /health, /status |
+| CLI | `cli/` | 4 | — | clap subcommands: server, query, import, status |
+| Schema registry | `model/schema.rs` | 1 | 7 tests | Schema-on-write, type-mismatch rejection |
+| Benchmarks | `benches/` | 3 | — | Criterion: ingestion, query, compression |
 
-**Total: 78 tests passing, 0 warnings.**
+**Total: 198 tests passing, 0 warnings.**
 
-### What's Missing (⬜)
+### What's Remaining (⬜)
 
 | Component | Priority | Complexity | Notes |
 |---|---|---|---|
-| Segment flush integration | P0 | Medium | Connect Database.rotate_memtable() to SegmentWriter |
-| Line protocol parser | P0 | Medium | Parse InfluxDB line protocol text |
-| PulseQL lexer | P0 | Medium | Tokenize query strings |
-| PulseQL parser | P0 | High | Recursive descent → AST |
-| AST types | P0 | Low | SelectStatement, Expr, AggFunc |
-| Query planner | P1 | High | Series resolution, segment pruning |
-| Query executor | P1 | High | Segment scanning, memtable merge |
-| Aggregator | P1 | Medium | count/sum/mean/min/max + GROUP BY time |
-| TCP server | P1 | Medium | Tokio TCP listener for line protocol |
-| HTTP server | P1 | Medium | Query API, health, status |
-| CLI commands | P2 | Low | clap subcommands |
-| Index persistence | P2 | Medium | Save/load series + tag indexes |
-| WAL binary format | P2 | Medium | Replace JSON with compact binary |
-| Compactor | P2 | High | Merge small segments |
-| Retention policies | P3 | Low | Auto-drop old partitions |
-| Advanced aggregations | P3 | Medium | percentile, stddev, first, last |
-| FILL policies | P3 | Low | linear, previous, null, none |
-| Regex tag matching | P3 | Low | =~ operator in query |
-| Bulk import tool | P3 | Low | CSV/line-protocol file import |
-| Memory-mapped reads | P3 | Medium | Replace fs::read with mmap |
-| Benchmarks | P3 | Medium | Criterion benchmarks + flamegraphs |
+| Flamegraph profiling | P3 | Medium | Hot-path optimization with cargo-flamegraph |
+| Lock contention analysis | P3 | Medium | Minimize RwLock hold times |
+| GitHub Actions CI | P3 | Low | Build, test, clippy, fmt pipeline |
+| WAL binary format | P3 | Medium | Replace JSON with compact binary serialization |
 
 ---
 

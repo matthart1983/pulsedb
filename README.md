@@ -39,6 +39,10 @@
 | **InfluxDB Line Protocol** | Compatible ingestion format — existing Telegraf, Prometheus, and IoT collectors work out of the box. |
 | **LZ4 Compression** | Outer compression layer on encoded columns. ~4GB/s decompression speed. |
 | **Concurrent Reads** | `parking_lot::RwLock` for minimal contention between writers and readers. |
+| **Background Compactor** | Merges small segments within partitions for fewer files and faster scans. |
+| **Retention Policies** | Auto-drop data older than a configurable duration. Delete a directory, reclaim space. |
+| **Regex Tag Matching** | `=~` and `!~` operators in PulseQL WHERE clauses for flexible tag filtering. |
+| **Schema Enforcement** | Schema-on-write prevents type conflicts — first write sets the type, mismatches are rejected. |
 
 ---
 
@@ -119,7 +123,7 @@ cargo build --release
 # Binary is at ./target/release/pulsedb
 ```
 
-### From crates.io (coming soon)
+### From crates.io
 
 ```bash
 cargo install pulsedb
@@ -365,7 +369,7 @@ Contributions are welcome! Please:
 ```bash
 cargo build              # Debug build
 cargo build --release    # Optimized release build
-cargo test               # Run all tests (78 tests)
+cargo test               # Run all tests (198 tests)
 cargo clippy             # Lint checks
 cargo fmt --check        # Format check
 cargo bench              # Run benchmarks
@@ -382,17 +386,20 @@ cargo bench              # Run benchmarks
 - [x] Columnar segment writer/reader with LZ4
 - [x] Time-based partitioning
 - [x] Series index + tag inverted index
-- [ ] Segment flush integration (memtable → disk)
-- [ ] Line protocol parser
-- [ ] PulseQL query engine (lexer, parser, planner, executor)
-- [ ] Aggregation functions (count, sum, mean, min, max, GROUP BY)
-- [ ] TCP ingestion server
-- [ ] HTTP query API
-- [ ] CLI (server, query, import, status)
-- [ ] Background compactor
-- [ ] Retention policies
-- [ ] Benchmarks + performance tuning
-- [ ] Publish to crates.io
+- [x] Segment flush integration (memtable → disk)
+- [x] Line protocol parser
+- [x] PulseQL query engine (lexer, parser, planner, executor)
+- [x] Aggregation functions (count, sum, mean, min, max, GROUP BY)
+- [x] TCP ingestion server
+- [x] HTTP query API
+- [x] CLI (server, query, import, status)
+- [x] Background compactor
+- [x] Retention policies
+- [x] Regex tag matching (=~ and !~ operators)
+- [x] Schema enforcement (type-mismatch rejection)
+- [x] Criterion benchmarks (ingestion, query, compression)
+- [ ] Flamegraph profiling + hot-path optimization
+- [ ] GitHub Actions CI
 
 ---
 
