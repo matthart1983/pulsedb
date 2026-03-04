@@ -9,7 +9,7 @@ import { existsSync } from 'fs'
 
 const URL = 'http://localhost:3000'
 const VIDEO_DIR = '/tmp/pulsedb-demo-video'
-const OUTPUT_GIF = 'demo.gif'
+const OUTPUT_GIF = 'ui-demo.gif'
 const WIDTH = 1280
 const HEIGHT = 720
 
@@ -53,8 +53,8 @@ async function main() {
   }
   await sleep(1500)
 
-  // --- Scene 3: Edit Market Overview → SOL chart ---
-  console.log('  ▸ Editing query → SOL chart')
+  // --- Scene 3: Edit Market Overview → multi-agg select query ---
+  console.log('  ▸ Editing query → multi-agg select')
   const marketPanel = page.locator('div:has(> div.drag-handle span:has-text("Market Overview"))')
   if (await marketPanel.first().isVisible()) {
     const editor = marketPanel.first().locator('.cm-content')
@@ -63,15 +63,15 @@ async function main() {
       await sleep(200)
       await page.keyboard.press('Meta+a')
       await sleep(150)
-      await typeSlowly(page, 'crypto @ `symbol = `SOL', 35)
-      await sleep(300)
+      await typeSlowly(page, 'select avg price, max price, min price, dev price from market where symbol = `BTC', 30)
+      await sleep(500)
       await page.keyboard.press('Meta+Enter')
       await sleep(3000)
     }
   }
 
-  // --- Scene 4: Edit ETH panel → avg BTC query ---
-  console.log('  ▸ Editing query → avg BTC')
+  // --- Scene 4: Edit ETH panel → pipeline volatility query ---
+  console.log('  ▸ Editing query → pipeline volatility')
   const ethPanel = page.locator('div:has(> div.drag-handle span:has-text("ETH Price"))')
   if (await ethPanel.first().isVisible()) {
     const editor = ethPanel.first().locator('.cm-content')
@@ -80,10 +80,10 @@ async function main() {
       await sleep(200)
       await page.keyboard.press('Meta+a')
       await sleep(150)
-      await typeSlowly(page, 'count crypto.price', 35)
-      await sleep(300)
+      await typeSlowly(page, 'crypto.price @ `symbol = `BTC |> deltas |> {x * x} |> avg |> sqrt', 30)
+      await sleep(500)
       await page.keyboard.press('Meta+Enter')
-      await sleep(2500)
+      await sleep(3000)
     }
   }
 
