@@ -319,6 +319,28 @@ rev 1 2 3                     → 3 2 1
 
 ---
 
+## 🖥️ PulseUI — Real-Time Dashboard
+
+PulseUI is a React-based visualization dashboard that connects to PulseDB over HTTP and WebSocket. Write PulseLang queries and see results rendered live as charts, tables, and scalar cards — all updating in real-time via WebSocket subscriptions.
+
+<p align="center">
+  <img src="ui-demo.gif" alt="PulseUI Live Dashboard Demo" width="800">
+</p>
+
+**Features**: Live WebSocket subscriptions · Auto-detecting visualizations (charts, scalars, tables) · Draggable panel grid · CodeMirror query editor · Dark theme
+
+```bash
+# Start PulseDB + PulseUI together
+./dev.sh
+
+# In another terminal, start the live market data feed
+node demo/market-feed.mjs
+```
+
+Open http://localhost:3000 and click **⚡ Demo** to load panels with live crypto data.
+
+---
+
 ## 📊 PulseLang vs PulseQL — Benchmarks
 
 Benchmarked on 1,000 points (`cargo bench --bench lang`):
@@ -522,6 +544,12 @@ cargo bench              # Run benchmarks
   - [x] Span-tracked error reporting (line:column positions)
   - [x] Optimizations (projection pushdown, vectorized int arithmetic, scan caching)
   - [x] PulseLang vs PulseQL benchmarks
+- [x] PulseUI — Real-time visualization dashboard
+  - [x] React + Vite + Zustand + Tailwind CSS
+  - [x] WebSocket live subscriptions (/ws endpoint)
+  - [x] Auto-detecting visualizations (charts, scalars, tables)
+  - [x] Draggable panel grid with CodeMirror query editor
+  - [x] Live crypto market data demo (CoinGecko feed)
 - [ ] Flamegraph profiling + hot-path optimization
 - [ ] GitHub Actions CI
 
