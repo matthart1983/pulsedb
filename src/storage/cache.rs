@@ -78,6 +78,11 @@ impl SegmentCache {
         keys
     }
 
+    /// Return all segment metadata entries.
+    pub fn all_metas(&self) -> &[SegmentMeta] {
+        &self.segments
+    }
+
     /// Remove metadata for a segment by path.
     pub fn remove(&mut self, path: &Path) {
         self.segments.retain(|s| s.path != path);

@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
 use crate::engine::Database;
+use crate::lang::value::Value;
 use crate::server::protocol;
 
 type AppState = Arc<Database>;
@@ -45,6 +47,7 @@ struct StatusResponse {
     series_count: usize,
     points_in_memtable: usize,
     segment_count: usize,
+    measurements: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -53,12 +56,20 @@ struct ErrorResponse {
 }
 
 pub async fn run_http_server(db: Arc<Database>, addr: &str) -> anyhow::Result<()> {
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
     let app = Router::new()
         .route("/query", post(query_handler))
         .route("/lang", post(lang_handler))
         .route("/write", post(write_handler))
         .route("/health", get(health_handler))
         .route("/status", get(status_handler))
+        .route("/measurements", get(measurements_handler))
+        .route("/fields", get(fields_handler))
+        .layer(cors)
         .with_state(db);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -83,12 +94,10 @@ async fn query_handler(
     let mut values = Vec::new();
     for row in &result.rows {
         let mut row_values: Vec<serde_json::Value> = Vec::new();
-        // "time" column first
         row_values.push(match row.timestamp {
             Some(ts) => serde_json::Value::Number(serde_json::Number::from(ts)),
             None => serde_json::Value::Null,
         });
-        // Tag columns
         for col in &result.columns {
             if col == "time" {
                 continue;
@@ -117,18 +126,147 @@ async fn query_handler(
     }))
 }
 
-#[derive(Serialize)]
-struct LangResponse {
-    result: String,
-    #[serde(rename = "type")]
-    result_type: String,
-    elapsed_ns: u64,
+/// Convert a PulseLang Value to a structured JSON response for the UI.
+fn value_to_json(value: &Value, elapsed_ns: u64) -> serde_json::Value {
+    match value {
+        Value::Int(v) => serde_json::json!({
+            "type": "int",
+            "value": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::UInt(v) => serde_json::json!({
+            "type": "uint",
+            "value": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::Float(v) => serde_json::json!({
+            "type": "float",
+            "value": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::Bool(v) => serde_json::json!({
+            "type": "bool",
+            "value": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::Str(v) => serde_json::json!({
+            "type": "str",
+            "value": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::Symbol(v) => serde_json::json!({
+            "type": "sym",
+            "value": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::Timestamp(v) => serde_json::json!({
+            "type": "ts",
+            "value": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::Duration(v) => serde_json::json!({
+            "type": "dur",
+            "value": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::Null => serde_json::json!({
+            "type": "null",
+            "value": null,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::IntVec(v) => serde_json::json!({
+            "type": "int[]",
+            "values": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::FloatVec(v) => serde_json::json!({
+            "type": "float[]",
+            "values": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::BoolVec(v) => serde_json::json!({
+            "type": "bool[]",
+            "values": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::SymVec(v) => serde_json::json!({
+            "type": "sym[]",
+            "values": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::StrVec(v) => serde_json::json!({
+            "type": "str[]",
+            "values": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::TimestampVec(v) => serde_json::json!({
+            "type": "ts[]",
+            "values": v,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::List(items) => {
+            let vals: Vec<serde_json::Value> = items.iter().map(|v| value_to_json(v, 0)).collect();
+            serde_json::json!({
+                "type": "list",
+                "values": vals,
+                "elapsed_ns": elapsed_ns,
+            })
+        }
+        Value::Dict(d) => {
+            let mut entries = serde_json::Map::new();
+            for (k, v) in d {
+                entries.insert(k.clone(), value_to_json(v, 0));
+            }
+            serde_json::json!({
+                "type": "dict",
+                "entries": entries,
+                "elapsed_ns": elapsed_ns,
+            })
+        }
+        Value::Table(table) => {
+            let mut data = serde_json::Map::new();
+            for (col_name, col_val) in &table.data {
+                data.insert(col_name.clone(), column_to_json(col_val));
+            }
+            let row_count = table.data.values().next().map_or(0, |v| v.count());
+            serde_json::json!({
+                "type": "table",
+                "columns": table.columns,
+                "data": data,
+                "row_count": row_count,
+                "elapsed_ns": elapsed_ns,
+            })
+        }
+        Value::Lambda { params, .. } => serde_json::json!({
+            "type": "fn",
+            "params": params,
+            "elapsed_ns": elapsed_ns,
+        }),
+        Value::BuiltinFn(name) => serde_json::json!({
+            "type": "fn",
+            "name": name,
+            "elapsed_ns": elapsed_ns,
+        }),
+    }
+}
+
+/// Convert a column Value to a JSON array for the table response.
+fn column_to_json(value: &Value) -> serde_json::Value {
+    match value {
+        Value::IntVec(v) => serde_json::json!(v),
+        Value::FloatVec(v) => serde_json::json!(v),
+        Value::BoolVec(v) => serde_json::json!(v),
+        Value::SymVec(v) => serde_json::json!(v),
+        Value::StrVec(v) => serde_json::json!(v),
+        Value::TimestampVec(v) => serde_json::json!(v),
+        _ => serde_json::json!(format!("{value}")),
+    }
 }
 
 async fn lang_handler(
     State(db): State<AppState>,
     Json(req): Json<QueryRequest>,
-) -> Result<Json<LangResponse>, (StatusCode, Json<ErrorResponse>)> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
     let start = std::time::Instant::now();
     let result = db.query_lang(&req.q).map_err(|e| {
         (
@@ -140,11 +278,7 @@ async fn lang_handler(
     })?;
     let elapsed = start.elapsed().as_nanos() as u64;
 
-    Ok(Json(LangResponse {
-        result_type: result.type_name().to_string(),
-        result: format!("{result}"),
-        elapsed_ns: elapsed,
-    }))
+    Ok(Json(value_to_json(&result, elapsed)))
 }
 
 async fn write_handler(
@@ -191,5 +325,38 @@ async fn status_handler(State(db): State<AppState>) -> Json<StatusResponse> {
         series_count: db.series_count(),
         points_in_memtable: db.point_count(),
         segment_count: db.segment_count(),
+        measurements: db.measurement_names(),
+    })
+}
+
+#[derive(Serialize)]
+struct MeasurementsResponse {
+    measurements: Vec<String>,
+}
+
+async fn measurements_handler(State(db): State<AppState>) -> Json<MeasurementsResponse> {
+    Json(MeasurementsResponse {
+        measurements: db.measurement_names(),
+    })
+}
+
+#[derive(Deserialize)]
+struct FieldsQuery {
+    measurement: String,
+}
+
+#[derive(Serialize)]
+struct FieldsResponse {
+    measurement: String,
+    fields: Vec<String>,
+}
+
+async fn fields_handler(
+    State(db): State<AppState>,
+    Query(params): Query<FieldsQuery>,
+) -> Json<FieldsResponse> {
+    Json(FieldsResponse {
+        measurement: params.measurement.clone(),
+        fields: db.field_names(&params.measurement),
     })
 }

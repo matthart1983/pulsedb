@@ -122,6 +122,39 @@ impl Database {
         self.segment_cache.read().len()
     }
 
+    /// List all known measurement names from schema registry, segment cache, and memtable.
+    pub fn measurement_names(&self) -> Vec<String> {
+        let mut names = std::collections::BTreeSet::new();
+
+        // From schema registry
+        for name in self.schema_registry.measurement_names() {
+            names.insert(name);
+        }
+
+        // From segment cache
+        let cache = self.segment_cache.read();
+        for meta in cache.all_metas() {
+            if let Some(measurement) = meta.series_key.split(',').next() {
+                names.insert(measurement.to_string());
+            }
+        }
+
+        // From active memtable
+        let active = self.active.read();
+        for (key, _) in active.iter_series() {
+            if let Some(measurement) = key.split(',').next() {
+                names.insert(measurement.to_string());
+            }
+        }
+
+        names.into_iter().collect()
+    }
+
+    /// List field names for a measurement from the schema registry.
+    pub fn field_names(&self, measurement: &str) -> Vec<String> {
+        self.schema_registry.field_names(measurement)
+    }
+
     /// Execute a PulseLang expression and return the result.
     pub fn query_lang(&self, input: &str) -> Result<crate::lang::value::Value> {
         let parser = crate::lang::parser::Parser::new(input)?.parse()?;

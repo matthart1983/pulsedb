@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-base: #0a0e17;
+  --bg-surface: #111827;
+  --bg-elevated: #1a2332;
+  --bg-overlay: #1f2937;
+  --border: #1e293b;
+  --border-focus: #3b82f6;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --chart-blue: #3b82f6;
+  --chart-cyan: #06b6d4;
+  --chart-green: #10b981;
+  --chart-red: #ef4444;
+  --chart-amber: #f59e0b;
+  --chart-purple: #8b5cf6;
+  --glow-blue: 0 0 20px rgba(59, 130, 246, 0.3);
+  --glow-green: 0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  height: 100vh;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Tabular nums for data */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Value change animation */
+@keyframes value-flash {
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
+}
+.value-changed {
+  animation: value-flash 0.3s ease;
+}
+
+/* Glow effect for live updates */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: none; }
+  50% { box-shadow: var(--glow-blue); }
+}
+.live-glow {
+  animation: glow-pulse 2s ease-in-out infinite;
+}

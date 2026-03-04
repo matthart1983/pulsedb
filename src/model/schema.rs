@@ -75,6 +75,19 @@ impl SchemaRegistry {
 
         Ok(())
     }
+
+    pub fn field_names(&self, measurement: &str) -> Vec<String> {
+        let schemas = self.schemas.read();
+        match schemas.get(measurement) {
+            Some(fields) => fields.keys().cloned().collect(),
+            None => Vec::new(),
+        }
+    }
+
+    pub fn measurement_names(&self) -> Vec<String> {
+        let schemas = self.schemas.read();
+        schemas.keys().cloned().collect()
+    }
 }
 
 #[cfg(test)]
