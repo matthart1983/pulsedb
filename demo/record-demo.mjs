@@ -53,8 +53,8 @@ async function main() {
   }
   await sleep(1500)
 
-  // --- Scene 3: Edit Market Overview → multi-agg select query ---
-  console.log('  ▸ Editing query → multi-agg select')
+  // --- Scene 3: Edit Market Overview → EMA pipeline on live BTC prices ---
+  console.log('  ▸ Editing query → EMA pipeline')
   const marketPanel = page.locator('div:has(> div.drag-handle span:has-text("Market Overview"))')
   if (await marketPanel.first().isVisible()) {
     const editor = marketPanel.first().locator('.cm-content')
@@ -63,15 +63,15 @@ async function main() {
       await sleep(200)
       await page.keyboard.press('Meta+a')
       await sleep(150)
-      await typeSlowly(page, 'select avg price, max price, min price, dev price from market where symbol = `BTC', 30)
+      await typeSlowly(page, 'crypto.price @ `symbol = `BTC |> {ema[0.1; x]}', 30)
       await sleep(500)
       await page.keyboard.press('Meta+Enter')
       await sleep(3000)
     }
   }
 
-  // --- Scene 4: Edit ETH panel → pipeline volatility query ---
-  console.log('  ▸ Editing query → pipeline volatility')
+  // --- Scene 4: Edit ETH panel → pipeline: spread (max - min) ---
+  console.log('  ▸ Editing query → spread calculation')
   const ethPanel = page.locator('div:has(> div.drag-handle span:has-text("ETH Price"))')
   if (await ethPanel.first().isVisible()) {
     const editor = ethPanel.first().locator('.cm-content')
@@ -80,7 +80,7 @@ async function main() {
       await sleep(200)
       await page.keyboard.press('Meta+a')
       await sleep(150)
-      await typeSlowly(page, 'crypto.price @ `symbol = `BTC |> deltas |> {x * x} |> avg |> sqrt', 30)
+      await typeSlowly(page, '(max crypto.price @ `symbol = `BTC) - (min crypto.price @ `symbol = `BTC)', 25)
       await sleep(500)
       await page.keyboard.press('Meta+Enter')
       await sleep(3000)
