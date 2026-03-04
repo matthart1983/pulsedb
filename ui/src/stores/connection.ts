@@ -4,15 +4,18 @@ import { getStatus } from '../api/client'
 
 interface ConnectionState {
   status: 'connected' | 'reconnecting' | 'disconnected'
+  wsStatus: 'connected' | 'reconnecting' | 'disconnected'
   serverInfo: StatusResponse | null
   lastPing: number | null
   error: string | null
   connect: () => void
   poll: () => Promise<void>
+  setWsStatus: (status: 'connected' | 'reconnecting' | 'disconnected') => void
 }
 
 export const useConnectionStore = create<ConnectionState>((set, get) => ({
   status: 'disconnected',
+  wsStatus: 'disconnected',
   serverInfo: null,
   lastPing: null,
   error: null,
@@ -34,5 +37,9 @@ export const useConnectionStore = create<ConnectionState>((set, get) => ({
         error: e instanceof Error ? e.message : 'Connection failed',
       }))
     }
+  },
+
+  setWsStatus(wsStatus) {
+    set({ wsStatus })
   },
 }))

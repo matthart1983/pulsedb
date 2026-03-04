@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react'
-import { X, RefreshCw, Maximize2, Minimize2 } from 'lucide-react'
+import { X, RefreshCw, Maximize2, Minimize2, Radio } from 'lucide-react'
 import { useDashboardStore } from '../stores/dashboard'
 import { usePanelQuery, detectVizType } from '../hooks/useQuery'
+import { usePanelSubscription } from '../hooks/useWebSocket'
 import { QueryEditor } from './QueryEditor'
 import { TimeSeriesChart } from './TimeSeriesChart'
 import { ScalarCard } from './ScalarCard'
@@ -16,6 +17,7 @@ export function Panel({ panelId }: PanelProps) {
   const updatePanel = useDashboardStore((s) => s.updatePanel)
   const removePanel = useDashboardStore((s) => s.removePanel)
   const { execute, result, loading, error } = usePanelQuery(panelId)
+  const { subscribe, unsubscribe, isLive } = usePanelSubscription(panelId)
   const [expanded, setExpanded] = useState(false)
 
   const handleExecute = useCallback((query: string) => {
@@ -25,6 +27,14 @@ export function Panel({ panelId }: PanelProps) {
   const handleQueryChange = useCallback((query: string) => {
     updatePanel(panelId, { query })
   }, [panelId, updatePanel])
+
+  const toggleLive = useCallback(() => {
+    if (isLive) {
+      unsubscribe()
+    } else if (panel?.query) {
+      subscribe(panel.query, panel.refreshInterval || 1000)
+    }
+  }, [isLive, panel?.query, panel?.refreshInterval, subscribe, unsubscribe])
 
   if (!panel) return null
 
@@ -45,6 +55,17 @@ export function Panel({ panelId }: PanelProps) {
             title="Refresh"
           >
             <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button
+            onClick={toggleLive}
+            className={`p-1 rounded transition-colors ${
+              isLive
+                ? 'bg-chart-green/20 text-chart-green'
+                : 'hover:bg-pulse-overlay text-pulse-text-muted hover:text-pulse-text'
+            }`}
+            title={isLive ? 'Stop live updates' : 'Start live updates'}
+          >
+            <Radio className={`w-3 h-3 ${isLive ? 'animate-pulse' : ''}`} />
           </button>
           <button
             onClick={() => setExpanded(!expanded)}

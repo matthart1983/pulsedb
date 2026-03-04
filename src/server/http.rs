@@ -1,10 +1,13 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
 use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
@@ -55,6 +58,24 @@ struct ErrorResponse {
     error: String,
 }
 
+#[derive(Deserialize)]
+struct WsClientMessage {
+    action: String,
+    id: String,
+    #[serde(default)]
+    query: Option<String>,
+    #[serde(default)]
+    interval_ms: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct WsDataMessage {
+    id: String,
+    #[serde(flatten)]
+    data: serde_json::Value,
+    timestamp: i64,
+}
+
 pub async fn run_http_server(db: Arc<Database>, addr: &str) -> anyhow::Result<()> {
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -69,6 +90,7 @@ pub async fn run_http_server(db: Arc<Database>, addr: &str) -> anyhow::Result<()
         .route("/status", get(status_handler))
         .route("/measurements", get(measurements_handler))
         .route("/fields", get(fields_handler))
+        .route("/ws", get(ws_handler))
         .layer(cors)
         .with_state(db);
 
@@ -359,4 +381,143 @@ async fn fields_handler(
         measurement: params.measurement.clone(),
         fields: db.field_names(&params.measurement),
     })
+}
+
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(db): State<AppState>,
+) -> impl axum::response::IntoResponse {
+    ws.on_upgrade(move |socket| handle_ws(socket, db))
+}
+
+async fn handle_ws(mut socket: WebSocket, db: Arc<Database>) {
+    let (tx, mut rx) = mpsc::channel::<String>(64);
+
+    let subscriptions: Arc<parking_lot::Mutex<HashMap<String, tokio::task::JoinHandle<()>>>> =
+        Arc::new(parking_lot::Mutex::new(HashMap::new()));
+
+    loop {
+        tokio::select! {
+            Some(msg) = rx.recv() => {
+                if socket.send(Message::Text(msg)).await.is_err() {
+                    break;
+                }
+            }
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(Message::Text(text))) => {
+                        let parsed: Result<WsClientMessage, _> = serde_json::from_str(&text);
+                        match parsed {
+                            Ok(client_msg) => {
+                                handle_ws_message(client_msg, &db, &tx, &subscriptions).await;
+                            }
+                            Err(e) => {
+                                let err = serde_json::json!({"error": e.to_string()});
+                                let _ = socket.send(Message::Text(err.to_string())).await;
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => break,
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let subs = subscriptions.lock();
+    for (_, handle) in subs.iter() {
+        handle.abort();
+    }
+}
+
+async fn handle_ws_message(
+    msg: WsClientMessage,
+    db: &Arc<Database>,
+    tx: &mpsc::Sender<String>,
+    subscriptions: &Arc<parking_lot::Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
+) {
+    match msg.action.as_str() {
+        "subscribe" => {
+            let query = match msg.query {
+                Some(q) => q,
+                None => return,
+            };
+            let interval_ms = msg.interval_ms.unwrap_or(1000).max(100);
+            let id = msg.id.clone();
+
+            {
+                let mut subs = subscriptions.lock();
+                if let Some(handle) = subs.remove(&id) {
+                    handle.abort();
+                }
+            }
+
+            let db = Arc::clone(db);
+            let tx = tx.clone();
+            let sub_id = id.clone();
+
+            let handle = tokio::spawn(async move {
+                let mut interval = tokio::time::interval(
+                    tokio::time::Duration::from_millis(interval_ms),
+                );
+                let mut last_json: Option<serde_json::Value> = None;
+
+                loop {
+                    interval.tick().await;
+
+                    let db_ref = Arc::clone(&db);
+                    let query_clone = query.clone();
+                    let result = tokio::task::spawn_blocking(move || {
+                        db_ref.query_lang(&query_clone)
+                    }).await;
+
+                    let value = match result {
+                        Ok(Ok(v)) => v,
+                        Ok(Err(e)) => {
+                            let err_msg = serde_json::json!({
+                                "id": sub_id,
+                                "error": e.to_string(),
+                            });
+                            if tx.send(err_msg.to_string()).await.is_err() {
+                                break;
+                            }
+                            continue;
+                        }
+                        Err(_) => break,
+                    };
+
+                    let data = value_to_json(&value, 0);
+
+                    if last_json.as_ref() == Some(&data) {
+                        continue;
+                    }
+                    last_json = Some(data.clone());
+
+                    let push = WsDataMessage {
+                        id: sub_id.clone(),
+                        data,
+                        timestamp: chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0),
+                    };
+
+                    match serde_json::to_string(&push) {
+                        Ok(json) => {
+                            if tx.send(json).await.is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+
+            subscriptions.lock().insert(id, handle);
+        }
+        "unsubscribe" => {
+            let mut subs = subscriptions.lock();
+            if let Some(handle) = subs.remove(&msg.id) {
+                handle.abort();
+            }
+        }
+        _ => {}
+    }
 }

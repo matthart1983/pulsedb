@@ -27,7 +27,7 @@ rustyline = "15"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 lz4_flex = "0.11"
 tokio = { version = "1", features = ["full"] }
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 hyper = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

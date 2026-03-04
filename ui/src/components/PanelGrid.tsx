@@ -3,6 +3,7 @@ import GridLayout, { type Layout } from 'react-grid-layout'
 import 'react-grid-layout/css/styles.css'
 import { useDashboardStore } from '../stores/dashboard'
 import { Panel } from './Panel'
+import { ErrorBoundary } from './ErrorBoundary'
 
 export function PanelGrid() {
   const panels = useDashboardStore((s) => s.panels)
@@ -39,7 +40,9 @@ export function PanelGrid() {
       >
         {panels.map((panel) => (
           <div key={panel.id}>
-            <Panel panelId={panel.id} />
+            <ErrorBoundary>
+              <Panel panelId={panel.id} />
+            </ErrorBoundary>
           </div>
         ))}
       </GridLayout>
