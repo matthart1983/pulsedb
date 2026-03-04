@@ -45,7 +45,7 @@ PulseUI is a lightweight, modern React-based dashboard for PulseDB that provides
 │  │  ├─ REST: POST /lang {q: "..."} → JSON result           │   │
 │  │  ├─ REST: POST /query {q: "..."} → JSON result          │   │
 │  │  ├─ REST: GET /status → engine stats                    │   │
-│  │  └─ WebSocket: ws://host:8088/ws → streaming updates    │   │
+│  │  └─ WebSocket: ws://host:8087/ws → streaming updates    │   │
 │  └──────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -752,40 +752,40 @@ ui/
 
 **Goal:** Single-panel query → visualization. Prove the loop works.
 
-- [ ] Vite + React + TypeScript + Tailwind project setup
-- [ ] Connection to PulseDB server (`POST /lang`, `GET /status`)
-- [ ] CORS support on PulseDB server
-- [ ] Enhanced `/lang` endpoint returning structured JSON
-- [ ] Query editor (CodeMirror 6 with basic PulseLang highlighting)
-- [ ] Time-series chart (Lightweight Charts, line mode)
-- [ ] Scalar KPI card
-- [ ] Data table (TanStack Table with basic features)
-- [ ] Auto-visualization selection based on result type
-- [ ] Dark theme with trading-platform aesthetic
-- [ ] Top bar with connection status
+- [x] Vite + React + TypeScript + Tailwind project setup
+- [x] Connection to PulseDB server (`POST /lang`, `GET /status`)
+- [x] CORS support on PulseDB server
+- [x] Enhanced `/lang` endpoint returning structured JSON
+- [x] Query editor (CodeMirror 6 with basic PulseLang highlighting)
+- [x] Time-series chart (Lightweight Charts, line mode)
+- [x] Scalar KPI card
+- [x] Data table (TanStack Table with basic features)
+- [x] Auto-visualization selection based on result type
+- [x] Dark theme with trading-platform aesthetic
+- [x] Top bar with connection status
 
 ### Phase 2 — Multi-Panel Dashboard
 
 **Goal:** Draggable, resizable panel grid. Multiple simultaneous queries.
 
-- [ ] react-grid-layout integration
-- [ ] Panel frame component (title bar, controls, close)
-- [ ] Add/remove panels
-- [ ] Panel-specific query editors
+- [x] react-grid-layout integration
+- [x] Panel frame component (title bar, controls, close)
+- [x] Add/remove panels
+- [x] Panel-specific query editors
 - [ ] Dashboard save/load (localStorage)
 - [ ] Preset layouts (single, quad, dashboard)
 - [ ] Chart type selector dropdown per panel
-- [ ] Multi-series overlay on time-series charts
+- [x] Multi-series overlay on time-series charts
 
 ### Phase 3 — Real-Time & Polish
 
 **Goal:** Live data updates, rich interactions, production-ready.
 
-- [ ] Auto-refresh polling with configurable intervals
+- [x] Auto-refresh polling with configurable intervals
 - [ ] Adaptive polling (slow down when data unchanged)
-- [ ] Value change animations (glow, morph, flash)
+- [x] Value change animations (glow, morph, flash)
 - [ ] Query autocomplete (builtins, measurements, fields)
-- [ ] `/measurements`, `/fields`, `/tags` endpoints on server
+- [x] `/measurements`, `/fields`, `/tags` endpoints on server
 - [ ] Query history (↑/↓ in editor)
 - [ ] Inline error display with line/column highlighting
 - [ ] Keyboard shortcuts
@@ -796,11 +796,11 @@ ui/
 
 **Goal:** True real-time push updates, minimal latency.
 
-- [ ] WebSocket endpoint on PulseDB server (`/ws`)
-- [ ] Subscription protocol (subscribe/unsubscribe per panel)
-- [ ] Server-side query re-evaluation on interval or write trigger
-- [ ] Delta detection (only push on change)
-- [ ] Client reconnection with exponential backoff
+- [x] WebSocket endpoint on PulseDB server (`/ws`)
+- [x] Subscription protocol (subscribe/unsubscribe per panel)
+- [x] Server-side query re-evaluation on interval or write trigger
+- [x] Delta detection (only push on change)
+- [x] Client reconnection with exponential backoff
 - [ ] Seamless fallback: WebSocket → polling
 
 ### Phase 5 — Advanced Visualizations

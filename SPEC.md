@@ -98,7 +98,12 @@ PulseDB uses **schema-on-write**: the first time a field name appears for a meas
                     │         └─────────────────────────────────────┘      │
                     │                                                      │
   HTTP :8087 ─────► │  Query Parser ──► Planner ──► Executor ──► JSON     │
-  (PulseQL)         │                                                      │
+  (PulseQL/Lang)    │                                                      │
+                    │  PulseLang ──► Interpreter ──► DB Resolver ──► JSON   │
+  REPL / HTTP       │                                                      │
+                    │                                                      │
+  WS /ws ─────────► │  WebSocket ──► Subscribe ──► Poll+Push ──► JSON     │
+  (live subs)       │                                                      │
                     └──────────────────────────────────────────────────────┘
 ```
 
@@ -533,6 +538,68 @@ cpu,host=server02 usage_idle=95.1 1672531200000000000
 }
 ```
 
+#### POST /lang
+
+Execute a PulseLang expression and return structured typed JSON:
+
+```http
+POST /lang HTTP/1.1
+Content-Type: application/json
+
+{ "q": "avg crypto.price @ `symbol = `BTC" }
+```
+
+**Success Response** (200):
+
+```json
+{
+  "type": "float",
+  "value": 73596.55,
+  "elapsed_ns": 4452167
+}
+```
+
+Response types: `int`, `uint`, `float`, `bool`, `str`, `sym`, `ts`, `dur`, `null`, `int[]`, `float[]`, `bool[]`, `sym[]`, `str[]`, `ts[]`, `list`, `dict`, `table`, `fn`. Tables use column-oriented format: `{"type": "table", "columns": [...], "data": {"col": [...]}, "row_count": N}`.
+
+#### GET /measurements
+
+```json
+200 OK
+{ "measurements": ["cpu", "crypto", "market"] }
+```
+
+#### GET /fields
+
+```http
+GET /fields?measurement=cpu
+```
+
+```json
+200 OK
+{ "measurement": "cpu", "fields": ["usage_idle", "usage_system"] }
+```
+
+#### WebSocket /ws
+
+Real-time push endpoint. Clients send JSON subscribe/unsubscribe messages; server re-evaluates queries on a timer and pushes structured results (same format as `/lang`) when data changes.
+
+**Client → Server:**
+
+```json
+{ "action": "subscribe", "id": "panel-1", "query": "last crypto.price @ `symbol = `BTC", "interval_ms": 1000 }
+{ "action": "unsubscribe", "id": "panel-1" }
+```
+
+**Server → Client:**
+
+```json
+{ "id": "panel-1", "type": "float", "value": 73750.0, "elapsed_ns": 0, "timestamp": 1704067500000000000 }
+```
+
+- Per-connection subscription tracking, each with independent poll interval (min 100ms)
+- Change detection: only pushes when result differs from previous evaluation
+- Subscriptions auto-cleaned on disconnect
+
 ---
 
 ## 7. Module Structure
@@ -583,10 +650,10 @@ src/
 │   ├── executor.rs         # Plan execution (segment scanning + memtable merge)
 │   └── aggregator.rs       # Aggregation functions + GROUP BY bucketing
 │
-├── server/                 # Network layer
+├── server/                 # Network servers
 │   ├── mod.rs
-│   ├── tcp.rs              # Line protocol TCP listener (tokio)
-│   ├── http.rs             # HTTP query API (axum or hyper)
+│   ├── tcp.rs              # TCP line protocol ingestion (:8086)
+│   ├── http.rs             # HTTP + WebSocket API (:8087) — axum
 │   └── protocol.rs         # Line protocol parser
 │
 └── cli/                    # CLI commands
@@ -728,6 +795,13 @@ src/
 | | POST /write — accept line protocol over HTTP | | |
 | | GET /health — liveness check | | |
 | | GET /status — engine statistics | | |
+| 3.2b | WebSocket endpoint (`server/http.rs`) | 3.2 | 3 hours |
+| | WS /ws — axum WebSocket upgrade | | |
+| | Subscribe/unsubscribe protocol per panel ID | | |
+| | Server-side query re-evaluation on interval | | |
+| | Change detection — only push when data differs | | |
+| | POST /lang — PulseLang eval with typed JSON | | |
+| | GET /measurements, GET /fields — schema discovery | | |
 | 3.3 | CLI: `pulsedb server` (`cli/server.rs`) | 3.1, 3.2 | 1 hour |
 | | Clap subcommand with --data-dir, --tcp-port, --http-port, etc. | | |
 | | Graceful shutdown (SIGTERM/SIGINT): flush memtable, close listeners | | |
@@ -889,6 +963,13 @@ Located in `benches/`:
 ---
 
 ## 13. Future Work (Post v1)
+
+### v1.0.1 — PulseUI Dashboard ✅ (Implemented)
+- React 19 + Vite 6 + TypeScript visualization dashboard
+- WebSocket /ws endpoint with live data subscriptions
+- Auto-detecting visualizations (charts, scalars, tables)
+- Draggable panel grid with CodeMirror query editor
+- Live crypto market data demo (CoinGecko feed)
 
 ### v1.1 — Observability
 - Prometheus metrics endpoint (`/metrics`)

@@ -30,6 +30,7 @@
 20. [Codebase Statistics](#codebase-statistics)
 21. [Roadmap](#roadmap)
 22. [Troubleshooting](#troubleshooting)
+23. [PulseUI Dashboard](#pulseui-dashboard)
 
 ---
 
@@ -100,6 +101,9 @@ Existing time-series databases trade off between performance and simplicity. Inf
   (PulseQL)         │                                                      │
                     │  PulseLang ──► Interpreter ──► DB Resolver ──► JSON   │
   REPL / HTTP       │  (APL-style)                                         │
+                    │                                                      │
+  WS /ws ─────────► │  WebSocket ──► Subscribe ──► Poll+Push ──► JSON     │
+  (live subs)       │  (per-connection subscription management)            │
                     └──────────────────────────────────────────────────────┘
 ```
 
@@ -1158,9 +1162,13 @@ Built with `axum`, listens on port **8087** (default):
 | Endpoint | Method | Description |
 |---|---|---|
 | `/query` | `POST` | Execute PulseQL query, return JSON results |
+| `/lang` | `POST` | Execute PulseLang expression, return structured typed JSON |
 | `/write` | `POST` | Ingest line protocol data over HTTP |
 | `/health` | `GET` | Liveness check: `{"status": "ok"}` |
-| `/status` | `GET` | Engine statistics |
+| `/status` | `GET` | Engine statistics (version, series count, points, segments, measurements) |
+| `/measurements` | `GET` | List all measurement names |
+| `/fields` | `GET` | List fields for a measurement (`?measurement=cpu`) |
+| `/ws` | `GET` | WebSocket endpoint for live data subscriptions |
 
 **Query request/response:**
 
@@ -1192,6 +1200,65 @@ curl -X POST http://localhost:8087/query \
   "segment_count": 42
 }
 ```
+
+### PulseLang API (`POST /lang`)
+
+Returns structured, typed JSON responses for PulseLang expressions:
+
+```bash
+curl -X POST http://localhost:8087/lang \
+  -H 'Content-Type: application/json' \
+  -d '{"q": "avg crypto.price @ `symbol = `BTC"}'
+
+# Response
+{
+  "type": "float",
+  "value": 73596.55,
+  "elapsed_ns": 4452167
+}
+```
+
+Response types include scalars (`int`, `float`, `bool`, `str`), vectors (`int[]`, `float[]`), tables (`table` with column-oriented data), dicts, and functions.
+
+### WebSocket Subscriptions (`/ws`)
+
+The `/ws` endpoint provides real-time push updates via WebSocket. Clients send subscribe/unsubscribe messages; the server re-evaluates queries on a configurable interval and pushes results when data changes.
+
+**Subscribe:**
+
+```json
+{
+  "action": "subscribe",
+  "id": "panel-1",
+  "query": "last crypto.price @ `symbol = `BTC",
+  "interval_ms": 1000
+}
+```
+
+**Server push (same format as `/lang` response + `id` and `timestamp`):**
+
+```json
+{
+  "id": "panel-1",
+  "type": "float",
+  "value": 73750.0,
+  "elapsed_ns": 0,
+  "timestamp": 1704067500000000000
+}
+```
+
+**Unsubscribe:**
+
+```json
+{ "action": "unsubscribe", "id": "panel-1" }
+```
+
+Features:
+- Per-connection subscription tracking with independent poll intervals
+- Change detection — only pushes when query result differs from previous
+- Minimum interval clamped to 100ms
+- Subscriptions cleaned up on disconnect
+- Queries executed via `spawn_blocking` to avoid blocking the async runtime
 
 ---
 
@@ -1377,7 +1444,7 @@ pulsedb version   # Print version information
 |---|---|---|
 | `mod.rs` | 3 | Module exports |
 | `tcp.rs` | 60 | TCP line protocol server (tokio, per-connection handler, batching) |
-| `http.rs` | 164 | HTTP API server (axum: /query, /write, /health, /status) |
+| `http.rs` | 523 | HTTP + WebSocket server (axum: /query, /lang, /write, /health, /status, /measurements, /fields, /ws) |
 | `protocol.rs` | 457 | InfluxDB line protocol parser with full type support |
 
 #### Storage (`src/storage/`)
@@ -1584,6 +1651,13 @@ cargo bench              # Run all Criterion benchmarks
   - [x] Optimizations (projection pushdown, vectorized integer arithmetic, scan caching CSE)
   - [x] PulseLang vs PulseQL benchmark suite
   - [x] VHS demo tape (demo.tape → demo.gif)
+- [x] PulseUI — Real-time visualization dashboard
+  - [x] React 19 + Vite 6 + TypeScript 5 + Zustand + Tailwind CSS
+  - [x] HTTP API: POST /lang (structured JSON), GET /measurements, GET /fields
+  - [x] WebSocket endpoint (/ws) with subscribe/unsubscribe protocol
+  - [x] Auto-detecting visualizations (charts, scalars, tables)
+  - [x] Draggable panel grid with CodeMirror query editor
+  - [x] Live crypto market data demo (CoinGecko feed)
 
 ### Planned
 
@@ -1597,6 +1671,88 @@ cargo bench              # Run all Criterion benchmarks
 - **v1.3 — PulseLang Extensions**: User-defined operators, namespaces, persistent function library
 - **v2.0 — Distributed**: Raft replication, consistent hashing, cross-node query fan-out
 - **v2.1 — Ecosystem**: Prometheus remote_write/read, Grafana plugin, OpenTelemetry receiver
+
+---
+
+## PulseUI Dashboard
+
+PulseUI is a React-based real-time visualization dashboard for PulseDB. It connects via HTTP REST and WebSocket to provide live, interactive query visualization.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────┐
+│              PulseUI (Browser)               │
+│                                             │
+│  TopBar ─── Connection Status + WS Status   │
+│  PanelGrid ─── react-grid-layout            │
+│    Panel ─── QueryEditor + Visualization    │
+│                                             │
+│  Stores (Zustand):                          │
+│    dashboardStore ─── panels, layout        │
+│    connectionStore ─── HTTP + WS status     │
+│                                             │
+│  Connection Layer:                          │
+│    REST ─── POST /lang, GET /status, etc.   │
+│    WebSocket ─── /ws (live subscriptions)   │
+└─────────────────────────────────────────────┘
+```
+
+### Tech Stack
+
+| Layer | Library |
+|---|---|
+| Framework | React 19 + TypeScript 5 |
+| Build | Vite 6 |
+| State | Zustand |
+| Charts | Lightweight Charts (TradingView) |
+| Tables | TanStack Table v8 |
+| Editor | CodeMirror 6 |
+| Layout | react-grid-layout |
+| Styling | Tailwind CSS 3 |
+| Icons | Lucide React |
+
+### Key Files
+
+| File | Description |
+|---|---|
+| `ui/src/api/client.ts` | HTTP API client (fetch-based) |
+| `ui/src/api/websocket.ts` | Reconnecting WebSocket manager |
+| `ui/src/api/types.ts` | TypeScript types for API responses |
+| `ui/src/stores/dashboard.ts` | Panel and layout state (Zustand) |
+| `ui/src/stores/connection.ts` | HTTP + WebSocket connection state |
+| `ui/src/hooks/useQuery.ts` | Panel query execution hook |
+| `ui/src/hooks/useWebSocket.ts` | WebSocket subscription hooks |
+| `ui/src/components/Panel.tsx` | Panel frame with live toggle |
+| `ui/src/components/TimeSeriesChart.tsx` | Lightweight Charts wrapper |
+| `ui/src/components/ScalarCard.tsx` | Scalar value card with delta |
+| `ui/src/components/DataTable.tsx` | TanStack Table for tabular data |
+| `ui/src/components/TopBar.tsx` | Top bar with demo loader |
+| `ui/vite.config.ts` | Dev server config with /api and /ws proxy |
+
+### Running
+
+```bash
+# Start everything
+./dev.sh
+
+# Or separately:
+cargo run -- server                  # PulseDB on :8087
+cd ui && npx vite --port 3000       # PulseUI on :3000
+
+# Live market data demo
+node demo/market-feed.mjs           # CoinGecko crypto feed
+```
+
+### Demo
+
+Click **⚡ Demo** in the top bar to load pre-configured panels:
+- **BTC Price** — `last crypto.price @ \`symbol = \`BTC` (live scalar)
+- **ETH Price** — `last crypto.price @ \`symbol = \`ETH` (live scalar)
+- **BTC Chart** — `crypto @ \`symbol = \`BTC` (live time-series chart)
+- **Market Overview** — `market` (live table)
+
+All panels auto-subscribe via WebSocket for real-time updates.
 
 ---
 
