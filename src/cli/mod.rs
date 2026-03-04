@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
+pub mod repl;
+
 #[derive(Parser, Debug)]
 #[command(name = "pulsedb", version, about = "High-performance time-series database")]
 pub struct Cli {
@@ -29,6 +31,21 @@ pub enum Commands {
         retention: u64,
         #[arg(long, default_value = "info")]
         log_level: String,
+    },
+    /// PulseLang interactive REPL or script runner
+    Lang {
+        /// Data directory (database to query)
+        #[arg(long, default_value = "./pulsedb_data")]
+        data_dir: PathBuf,
+        /// Execute a single expression and exit
+        #[arg(short, long)]
+        execute: Option<String>,
+        /// Execute a .pulse script file
+        #[arg(short, long)]
+        file: Option<PathBuf>,
+        /// Output format: text (default), json, csv
+        #[arg(long, default_value = "text")]
+        format: String,
     },
     /// Show server version
     Version,

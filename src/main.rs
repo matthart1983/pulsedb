@@ -101,6 +101,22 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+        Some(cli::Commands::Lang { data_dir, execute, file, format }) => {
+            let config = engine::config::EngineConfig {
+                data_dir,
+                ..Default::default()
+            };
+            let db = engine::Database::open(config)?;
+            let fmt = cli::repl::OutputFormat::from_str(&format);
+
+            if let Some(expr) = execute {
+                cli::repl::run_expression(&db, &expr, fmt)?;
+            } else if let Some(path) = file {
+                cli::repl::run_script(&db, &path, fmt)?;
+            } else {
+                cli::repl::run_repl(&db, fmt)?;
+            }
+        }
         Some(cli::Commands::Version) | None => {
             println!("PulseDB v{}", env!("CARGO_PKG_VERSION"));
         }

@@ -20,7 +20,11 @@
 </p>
 
 <p align="center">
-  <b>A purpose-built time-series database written in pure Rust — columnar storage, type-aware compression, and a SQL-like query language. All from a single binary.</b>
+  <b>A purpose-built time-series database written in pure Rust — columnar storage, type-aware compression, and dual query languages (SQL-like PulseQL + APL-inspired PulseLang). All from a single binary.</b>
+</p>
+
+<p align="center">
+  <img src="demo.gif" alt="PulseLang REPL Demo" width="800">
 </p>
 
 ---
@@ -37,6 +41,7 @@
 | **Inverted Tag Index** | Tag key-value pairs map to sorted posting lists. O(n+m) intersection for compound predicates. |
 | **Time-Based Partitioning** | Hourly partition directories for fast time-range pruning. Drop old data by deleting directories. |
 | **PulseQL** | SQL-like query language: `SELECT mean(cpu) FROM metrics WHERE host='a' GROUP BY time(5m)`. |
+| **PulseLang** | APL-inspired functional language: `avg cpu.usage @ \`host = \`server01`. Arrays, pipelines, lambdas. |
 | **InfluxDB Line Protocol** | Compatible ingestion format — existing Telegraf, Prometheus, and IoT collectors work out of the box. |
 | **LZ4 Compression** | Outer compression layer on encoded columns. ~4GB/s decompression speed. |
 | **Concurrent Reads** | `parking_lot::RwLock` for minimal contention between writers and readers. |
@@ -234,6 +239,108 @@ FILL(linear)
 
 ---
 
+## 🧮 Query Language — PulseLang
+
+An APL-inspired functional language where arrays are first-class and every operation composes. Designed for interactive exploration and time-series analytics.
+
+```bash
+# Launch the REPL
+pulsedb lang --data-dir /var/lib/pulsedb
+```
+
+### Basics
+
+```
+/ Vectors are space-separated
+1 2 3 4 5 + 10                → 11 12 13 14 15
+
+/ Reductions
+sum 1 2 3 4 5                 → 15
+avg 10.0 20.0 30.0            → 20.0
+
+/ Assignment
+vals: 10.0 20.0 30.0 40.0 50.0
+avg vals                      → 30.0
+
+/ Lambdas
+double: {x * 2}
+double[21]                    → 42
+
+/ Pipelines
+1 2 3 4 5 |> sum              → 15
+```
+
+### Database Access
+
+```
+/ Direct column access (no SELECT/FROM needed)
+cpu.usage_idle
+
+/ Tag filtering with @ operator
+cpu.usage_idle @ `host = `server01
+
+/ Time range with within
+cpu @ `host = `server01 within (2024.01.15D00:00:00; 2024.01.16D00:00:00)
+
+/ Aggregation
+select avg(usage_idle) from cpu by 5m
+```
+
+### Time-Series Primitives
+
+```
+/ Moving windows
+mavg[10; cpu.usage]           / 10-point moving average
+ema[0.3; prices]              / exponential moving average
+mdev[20; cpu.usage]           / moving standard deviation
+
+/ Differences & ratios
+deltas vals                   / element-wise differences
+ratios vals                   / element-wise ratios
+
+/ Time bucketing
+xbar[5m; timestamps]          / bucket to 5-minute intervals
+
+/ Sorting & structural ops
+asc 3 1 4 1 5                 → 1 1 3 4 5
+distinct 1 2 1 3 2            → 1 2 3
+rev 1 2 3                     → 3 2 1
+```
+
+### Output Formats
+
+```
+\fmt text                     / ASCII table (default)
+\fmt json                     / JSON output
+\fmt csv                      / CSV output
+```
+
+> See [PULSE_LANG_SPEC.md](PULSE_LANG_SPEC.md) for the full language specification.
+
+---
+
+## 📊 PulseLang vs PulseQL — Benchmarks
+
+Benchmarked on 1,000 points (`cargo bench --bench lang`):
+
+| Operation | PulseLang | PulseQL | Speedup |
+|---|---|---|---|
+| Column access (1K points) | 119 µs | 184 µs | **1.55×** |
+| Aggregation (`avg`) | 122 µs | 127 µs | **1.04×** |
+
+**Pure interpreter performance** (no I/O, 1,000-element vectors):
+
+| Operation | Time |
+|---|---|
+| Vector arithmetic (`x + y`) | 1.6 µs |
+| Reduction (`sum v`) | 1.2 µs |
+| Moving average (`mavg[10; v]`) | 2.6 µs |
+| `deltas` | 122 µs |
+| `ema[0.1; ...]` | 126 µs |
+| Pipeline (`avg deltas ...`) | 124 µs |
+
+---
+
 ## 🔌 Wire Protocol
 
 ### Ingestion — TCP :8086
@@ -349,8 +456,15 @@ src/
 │   ├── series.rs        # Key → ID mapping
 │   └── inverted.rs      # Tag inverted index (posting lists)
 ├── query/               # Query engine (PulseQL parser, planner, executor)
+├── lang/                # PulseLang (APL-inspired query language)
+│   ├── lexer.rs         # Tokenizer with span tracking
+│   ├── parser.rs        # Recursive-descent parser → AST
+│   ├── ast.rs           # Expression tree
+│   ├── value.rs         # Runtime values (scalars, vectors, tables)
+│   ├── interpreter.rs   # Tree-walk interpreter
+│   └── db.rs            # Database integration (measurement resolution)
 ├── server/              # TCP + HTTP network layer
-└── cli/                 # CLI commands (server, query, import, status)
+└── cli/                 # CLI commands (server, query, import, status, lang)
 ```
 
 ---
@@ -370,7 +484,7 @@ Contributions are welcome! Please:
 ```bash
 cargo build              # Debug build
 cargo build --release    # Optimized release build
-cargo test               # Run all tests (198 tests)
+cargo test               # Run all tests (343 tests)
 cargo clippy             # Lint checks
 cargo fmt --check        # Format check
 cargo bench              # Run benchmarks
@@ -399,6 +513,15 @@ cargo bench              # Run benchmarks
 - [x] Regex tag matching (=~ and !~ operators)
 - [x] Schema enforcement (type-mismatch rejection)
 - [x] Criterion benchmarks (ingestion, query, compression)
+- [x] PulseLang — APL-inspired functional query language
+  - [x] Core interpreter (lexer, parser, tree-walk evaluator)
+  - [x] Array operations, reductions, scans, lambdas, pipelines
+  - [x] Database integration (measurement access, tag filtering, time ranges)
+  - [x] Time-series primitives (mavg, ema, wma, xbar, deltas, resample, asof)
+  - [x] REPL with rustyline (text/JSON/CSV output, `.pulse` script loading)
+  - [x] Span-tracked error reporting (line:column positions)
+  - [x] Optimizations (projection pushdown, vectorized int arithmetic, scan caching)
+  - [x] PulseLang vs PulseQL benchmarks
 - [ ] Flamegraph profiling + hot-path optimization
 - [ ] GitHub Actions CI
 

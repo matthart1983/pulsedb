@@ -55,6 +55,7 @@ struct ErrorResponse {
 pub async fn run_http_server(db: Arc<Database>, addr: &str) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/query", post(query_handler))
+        .route("/lang", post(lang_handler))
         .route("/write", post(write_handler))
         .route("/health", get(health_handler))
         .route("/status", get(status_handler))
@@ -113,6 +114,36 @@ async fn query_handler(
         results: vec![SeriesResult {
             series: vec![series_data],
         }],
+    }))
+}
+
+#[derive(Serialize)]
+struct LangResponse {
+    result: String,
+    #[serde(rename = "type")]
+    result_type: String,
+    elapsed_ns: u64,
+}
+
+async fn lang_handler(
+    State(db): State<AppState>,
+    Json(req): Json<QueryRequest>,
+) -> Result<Json<LangResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let start = std::time::Instant::now();
+    let result = db.query_lang(&req.q).map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+    })?;
+    let elapsed = start.elapsed().as_nanos() as u64;
+
+    Ok(Json(LangResponse {
+        result_type: result.type_name().to_string(),
+        result: format!("{result}"),
+        elapsed_ns: elapsed,
     }))
 }
 

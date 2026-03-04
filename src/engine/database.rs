@@ -122,6 +122,33 @@ impl Database {
         self.segment_cache.read().len()
     }
 
+    /// Execute a PulseLang expression and return the result.
+    pub fn query_lang(&self, input: &str) -> Result<crate::lang::value::Value> {
+        let parser = crate::lang::parser::Parser::new(input)?.parse()?;
+        let mut env = crate::lang::interpreter::Env::new();
+
+        let inv = self.inverted_index.read();
+        let cache = self.segment_cache.read();
+        let active = self.active.read();
+
+        crate::lang::db::eval_with_db(&parser, &mut env, &inv, &cache, &active)
+    }
+
+    /// Execute a PulseLang expression with a persistent environment (for REPL sessions).
+    pub fn query_lang_with_env(
+        &self,
+        input: &str,
+        env: &mut crate::lang::interpreter::Env,
+    ) -> Result<crate::lang::value::Value> {
+        let parser = crate::lang::parser::Parser::new(input)?.parse()?;
+
+        let inv = self.inverted_index.read();
+        let cache = self.segment_cache.read();
+        let active = self.active.read();
+
+        crate::lang::db::eval_with_db(&parser, env, &inv, &cache, &active)
+    }
+
     /// Execute a PulseQL query and return aggregated results.
     pub fn query(&self, sql: &str) -> Result<QueryResult> {
         let stmt = crate::query::parser::Parser::new(sql)?.parse()?;
@@ -475,6 +502,112 @@ mod tests {
     }
 
     #[test]
+    fn query_lang_basic_expression() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(test_config(dir.path())).unwrap();
+        // Pure expression (no DB data needed)
+        let result = db.query_lang("2 + 3").unwrap();
+        assert_eq!(format!("{result}"), "5");
+    }
+
+    #[test]
+    fn query_lang_with_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = test_config(dir.path());
+        cfg.memtable_size_bytes = 1; // trigger flush
+
+        let db = Database::open(cfg).unwrap();
+
+        let base_ns = 1_000_000_000_000i64;
+        let sec = 1_000_000_000i64;
+        let points: Vec<DataPoint> = (0..5)
+            .map(|i| DataPoint {
+                measurement: "cpu".into(),
+                tags: BTreeMap::from([("host".into(), "web1".into())]),
+                fields: BTreeMap::from([("usage".into(), FieldValue::Float(i as f64 * 20.0))]),
+                timestamp: base_ns + i as i64 * sec,
+            })
+            .collect();
+
+        db.write(points).unwrap();
+
+        // Query column directly
+        let result = db.query_lang("cpu.usage").unwrap();
+        let floats = result.to_float_vec().unwrap();
+        assert_eq!(floats.len(), 5);
+        assert_eq!(floats[0], 0.0);
+        assert_eq!(floats[4], 80.0);
+    }
+
+    #[test]
+    fn query_lang_aggregation() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = test_config(dir.path());
+        cfg.memtable_size_bytes = 1;
+
+        let db = Database::open(cfg).unwrap();
+
+        let points: Vec<DataPoint> = (0..4)
+            .map(|i| DataPoint {
+                measurement: "temp".into(),
+                tags: BTreeMap::from([("sensor".into(), "A".into())]),
+                fields: BTreeMap::from([("value".into(), FieldValue::Float(10.0 + i as f64 * 5.0))]),
+                timestamp: 1000 + i as i64,
+            })
+            .collect();
+
+        db.write(points).unwrap();
+
+        // avg temp.value = mean(10, 15, 20, 25) = 17.5
+        let result = db.query_lang("avg temp.value").unwrap();
+        assert_eq!(format!("{result}"), "17.5");
+    }
+
+    #[test]
+    fn query_lang_tag_filter() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = test_config(dir.path());
+        cfg.memtable_size_bytes = 1;
+
+        let db = Database::open(cfg).unwrap();
+
+        // Write data for two hosts
+        let mut points = Vec::new();
+        for i in 0..3 {
+            points.push(DataPoint {
+                measurement: "cpu".into(),
+                tags: BTreeMap::from([("host".into(), "web1".into())]),
+                fields: BTreeMap::from([("usage".into(), FieldValue::Float(10.0 + i as f64))]),
+                timestamp: 1000 + i as i64,
+            });
+            points.push(DataPoint {
+                measurement: "cpu".into(),
+                tags: BTreeMap::from([("host".into(), "web2".into())]),
+                fields: BTreeMap::from([("usage".into(), FieldValue::Float(50.0 + i as f64))]),
+                timestamp: 1000 + i as i64,
+            });
+        }
+
+        db.write(points).unwrap();
+
+        // Total count across both hosts
+        let result = db.query_lang("count cpu.usage").unwrap();
+        assert_eq!(format!("{result}"), "6");
+
+        // Filter to web1 only: avg(10, 11, 12) = 11
+        let result = db.query_lang("avg cpu.usage @ `host = `web1").unwrap();
+        assert_eq!(format!("{result}"), "11");
+    }
+
+    #[test]
+    fn query_lang_pipeline() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Database::open(test_config(dir.path())).unwrap();
+        let result = db.query_lang("1 2 3 4 5 |> sum").unwrap();
+        assert_eq!(format!("{result}"), "15");
+    }
+
+    #[test]
     fn parse_tags_from_series_key_helper() {
         let tags = parse_tags_from_series_key("cpu,host=web1,region=us");
         assert_eq!(tags.len(), 2);
@@ -483,5 +616,260 @@ mod tests {
 
         let empty = parse_tags_from_series_key("cpu");
         assert!(empty.is_empty());
+    }
+
+    // --- Phase 3: Time-Series Primitives Integration Tests ---
+
+    /// Helper: create a DB with flushed time-series data (10 points, 1s apart).
+    fn db_with_ts_data() -> (tempfile::TempDir, Database) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = test_config(dir.path());
+        cfg.memtable_size_bytes = 1; // trigger flush
+
+        let db = Database::open(cfg).unwrap();
+
+        let base_ns = 1_000_000_000_000i64; // 1e12 ns
+        let sec = 1_000_000_000i64;
+        let points: Vec<DataPoint> = (0..10)
+            .map(|i| DataPoint {
+                measurement: "cpu".into(),
+                tags: BTreeMap::from([("host".into(), "web1".into())]),
+                fields: BTreeMap::from([("usage".into(), FieldValue::Float(i as f64 * 10.0))]),
+                timestamp: base_ns + i as i64 * sec,
+            })
+            .collect();
+
+        db.write(points).unwrap();
+        (dir, db)
+    }
+
+    #[test]
+    fn query_lang_deltas_on_db_column() {
+        let (_dir, db) = db_with_ts_data();
+        // usage = 0, 10, 20, ..., 90 → deltas = 0, 10, 10, ..., 10
+        let result = db.query_lang("deltas cpu.usage").unwrap();
+        let v = result.to_float_vec().unwrap();
+        assert_eq!(v.len(), 10);
+        assert_eq!(v[0], 0.0); // first delta is the value itself
+        for i in 1..10 {
+            assert!((v[i] - 10.0).abs() < 0.001);
+        }
+    }
+
+    #[test]
+    fn query_lang_ratios_on_db_column() {
+        let (_dir, db) = db_with_ts_data();
+        // usage = 0, 10, 20, ..., 90 → ratios = NaN, inf, 2.0, 1.5, ...
+        let result = db.query_lang("ratios cpu.usage").unwrap();
+        let v = result.to_float_vec().unwrap();
+        assert_eq!(v.len(), 10);
+        assert!(v[0].is_nan());
+        // ratios[2] = 20/10 = 2.0
+        assert!((v[2] - 2.0).abs() < 0.001);
+        // ratios[3] = 30/20 = 1.5
+        assert!((v[3] - 1.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn query_lang_prev_next_on_db_column() {
+        let (_dir, db) = db_with_ts_data();
+        // prev: [NaN, 0, 10, 20, ..., 80]
+        let result = db.query_lang("prev cpu.usage").unwrap();
+        let v = result.to_float_vec().unwrap();
+        assert_eq!(v.len(), 10);
+        assert!(v[0].is_nan());
+        assert_eq!(v[1], 0.0);
+        assert_eq!(v[9], 80.0);
+
+        // next: [10, 20, ..., 90, NaN]
+        let result = db.query_lang("next cpu.usage").unwrap();
+        let v = result.to_float_vec().unwrap();
+        assert_eq!(v[0], 10.0);
+        assert_eq!(v[8], 90.0);
+        assert!(v[9].is_nan());
+    }
+
+    #[test]
+    fn query_lang_mavg_on_db_column() {
+        let (_dir, db) = db_with_ts_data();
+        // mavg[3; cpu.usage] on [0, 10, 20, 30, ...]
+        let result = db.query_lang("mavg[3; cpu.usage]").unwrap();
+        let v = result.to_float_vec().unwrap();
+        assert_eq!(v.len(), 10);
+        // mavg[3] at i=0: avg(0) = 0
+        assert!((v[0] - 0.0).abs() < 0.001);
+        // mavg[3] at i=1: avg(0,10) = 5
+        assert!((v[1] - 5.0).abs() < 0.001);
+        // mavg[3] at i=2: avg(0,10,20) = 10
+        assert!((v[2] - 10.0).abs() < 0.001);
+        // mavg[3] at i=3: avg(10,20,30) = 20
+        assert!((v[3] - 20.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn query_lang_msum_on_db_column() {
+        let (_dir, db) = db_with_ts_data();
+        let result = db.query_lang("msum[3; cpu.usage]").unwrap();
+        let v = result.to_float_vec().unwrap();
+        assert_eq!(v.len(), 10);
+        // msum[3] at i=2: 0+10+20 = 30
+        assert!((v[2] - 30.0).abs() < 0.001);
+        // msum[3] at i=3: 10+20+30 = 60
+        assert!((v[3] - 60.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn query_lang_mdev_on_db_column() {
+        let (_dir, db) = db_with_ts_data();
+        let result = db.query_lang("mdev[3; cpu.usage]").unwrap();
+        let v = result.to_float_vec().unwrap();
+        assert_eq!(v.len(), 10);
+        // mdev at i=0: dev(0) = 0
+        assert!((v[0] - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn query_lang_ema_on_db_column() {
+        let (_dir, db) = db_with_ts_data();
+        let result = db.query_lang("ema[0.5; cpu.usage]").unwrap();
+        let v = result.to_float_vec().unwrap();
+        assert_eq!(v.len(), 10);
+        assert_eq!(v[0], 0.0);
+        // ema[1] = 0.5*10 + 0.5*0 = 5
+        assert!((v[1] - 5.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn query_lang_wma_on_db_column() {
+        let (_dir, db) = db_with_ts_data();
+        let result = db.query_lang("wma[3; cpu.usage]").unwrap();
+        let v = result.to_float_vec().unwrap();
+        assert_eq!(v.len(), 10);
+        // wma[3] at i=2: (1*0 + 2*10 + 3*20) / (1+2+3) = 80/6 ≈ 13.333
+        assert!((v[2] - 80.0 / 6.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn query_lang_fills_on_db_column() {
+        let (_dir, db) = db_with_ts_data();
+        // ffill on already-complete data is identity
+        let result = db.query_lang("ffill cpu.usage").unwrap();
+        let v = result.to_float_vec().unwrap();
+        assert_eq!(v.len(), 10);
+        assert_eq!(v[0], 0.0);
+        assert_eq!(v[9], 90.0);
+    }
+
+    #[test]
+    fn query_lang_sums_on_db_column() {
+        let (_dir, db) = db_with_ts_data();
+        // sums of 0, 10, 20, ..., 90 → 0, 10, 30, 60, ...
+        let result = db.query_lang("sums cpu.usage").unwrap();
+        let v = result.to_float_vec().unwrap();
+        assert_eq!(v.len(), 10);
+        assert_eq!(v[0], 0.0);
+        assert_eq!(v[1], 10.0);
+        assert_eq!(v[2], 30.0);
+        assert_eq!(v[3], 60.0);
+    }
+
+    #[test]
+    fn query_lang_xbar_on_db_timestamps() {
+        let (_dir, db) = db_with_ts_data();
+        // xbar[5s; cpu.ts] should bucket 10 timestamps (1s apart) into 2 buckets
+        let mut env = crate::lang::interpreter::Env::new();
+        let result = db.query_lang_with_env("ts: cpu.ts", &mut env).unwrap();
+        assert!(matches!(result, crate::lang::value::Value::TimestampVec(_)));
+
+        let result = db.query_lang_with_env("xbar[5s; cpu.ts]", &mut env).unwrap();
+        if let crate::lang::value::Value::TimestampVec(v) = result {
+            assert_eq!(v.len(), 10);
+            // First 5 should have the same bucket
+            assert_eq!(v[0], v[1]);
+            assert_eq!(v[0], v[4]);
+            // Last 5 should have a different bucket
+            assert_eq!(v[5], v[9]);
+            assert_ne!(v[0], v[5]);
+        } else {
+            panic!("expected timestamp vec");
+        }
+    }
+
+    #[test]
+    fn query_lang_pipeline_with_db() {
+        let (_dir, db) = db_with_ts_data();
+        // cpu.usage |> mavg[3;] is not valid since mavg is dyadic
+        // Instead test: cpu.usage |> avg
+        let result = db.query_lang("cpu.usage |> avg").unwrap();
+        // avg(0, 10, 20, ..., 90) = 45
+        assert_eq!(format!("{result}"), "45");
+    }
+
+    #[test]
+    fn query_lang_temporal_extraction_year() {
+        // Use a known timestamp: 2024-01-15T12:30:00 UTC
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = test_config(dir.path());
+        cfg.memtable_size_bytes = 1;
+
+        let db = Database::open(cfg).unwrap();
+
+        // 2024-01-15T12:30:00 UTC in nanoseconds
+        let ts_ns = chrono::NaiveDate::from_ymd_opt(2024, 1, 15)
+            .unwrap()
+            .and_hms_opt(12, 30, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_nanos_opt()
+            .unwrap();
+
+        let points = vec![DataPoint {
+            measurement: "sensor".into(),
+            tags: BTreeMap::from([("id".into(), "A".into())]),
+            fields: BTreeMap::from([("temp".into(), FieldValue::Float(22.5))]),
+            timestamp: ts_ns,
+        }];
+        db.write(points).unwrap();
+
+        let mut env = crate::lang::interpreter::Env::new();
+        // Extract the timestamp column
+        let result = db.query_lang_with_env("sensor.ts", &mut env).unwrap();
+        assert!(matches!(result, crate::lang::value::Value::TimestampVec(_)));
+
+        // Temporal extraction on the vector
+        db.query_lang_with_env("t: sensor.ts", &mut env).unwrap();
+        let result = db.query_lang_with_env("t.year", &mut env).unwrap();
+        assert_eq!(result, crate::lang::value::Value::IntVec(vec![2024]));
+
+        let result = db.query_lang_with_env("t.month", &mut env).unwrap();
+        assert_eq!(result, crate::lang::value::Value::IntVec(vec![1]));
+
+        let result = db.query_lang_with_env("t.day", &mut env).unwrap();
+        assert_eq!(result, crate::lang::value::Value::IntVec(vec![15]));
+
+        let result = db.query_lang_with_env("t.hour", &mut env).unwrap();
+        assert_eq!(result, crate::lang::value::Value::IntVec(vec![12]));
+
+        let result = db.query_lang_with_env("t.minute", &mut env).unwrap();
+        assert_eq!(result, crate::lang::value::Value::IntVec(vec![30]));
+
+        let result = db.query_lang_with_env("t.second", &mut env).unwrap();
+        assert_eq!(result, crate::lang::value::Value::IntVec(vec![0]));
+
+        // 2024-01-15 is Monday (dow=0), ISO week 3
+        let result = db.query_lang_with_env("t.dow", &mut env).unwrap();
+        assert_eq!(result, crate::lang::value::Value::IntVec(vec![0]));
+
+        let result = db.query_lang_with_env("t.week", &mut env).unwrap();
+        assert_eq!(result, crate::lang::value::Value::IntVec(vec![3]));
+    }
+
+    #[test]
+    fn query_lang_combined_pipeline_deltas_avg() {
+        let (_dir, db) = db_with_ts_data();
+        // deltas of [0, 10, 20, ..., 90] = [0, 10, 10, ..., 10]
+        // avg of deltas = (0 + 9*10) / 10 = 9
+        let result = db.query_lang("avg deltas cpu.usage").unwrap();
+        assert_eq!(format!("{result}"), "9");
     }
 }
