@@ -4,6 +4,7 @@ pub mod engine;
 pub mod index;
 pub mod lang;
 pub mod model;
+pub mod python;
 pub mod query;
 pub mod server;
 pub mod storage;

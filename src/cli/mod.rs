@@ -47,6 +47,18 @@ pub enum Commands {
         #[arg(long, default_value = "text")]
         format: String,
     },
+    /// Python scripting via Viper interpreter
+    Python {
+        /// Data directory (database to query)
+        #[arg(long, default_value = "./pulsedb_data")]
+        data_dir: PathBuf,
+        /// Execute a single Python expression and exit
+        #[arg(short, long)]
+        execute: Option<String>,
+        /// Execute a .py script file
+        #[arg(short, long)]
+        file: Option<PathBuf>,
+    },
     /// Show server version
     Version,
 }

@@ -117,6 +117,21 @@ async fn main() -> anyhow::Result<()> {
                 cli::repl::run_repl(&db, fmt)?;
             }
         }
+        Some(cli::Commands::Python { data_dir, execute, file }) => {
+            let config = engine::config::EngineConfig {
+                data_dir,
+                ..Default::default()
+            };
+            let db = Arc::new(engine::Database::open(config)?);
+
+            if let Some(expr) = execute {
+                pulsedb::python::bridge::run_python_expr(db, &expr)?;
+            } else if let Some(path) = file {
+                pulsedb::python::bridge::run_python_file(db, &path)?;
+            } else {
+                pulsedb::python::bridge::run_python_repl(db)?;
+            }
+        }
         Some(cli::Commands::Version) | None => {
             println!("PulseDB v{}", env!("CARGO_PKG_VERSION"));
         }

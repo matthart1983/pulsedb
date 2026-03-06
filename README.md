@@ -42,6 +42,7 @@
 | **Time-Based Partitioning** | Hourly partition directories for fast time-range pruning. Drop old data by deleting directories. |
 | **PulseQL** | SQL-like query language: `SELECT mean(cpu) FROM metrics WHERE host='a' GROUP BY time(5m)`. |
 | **PulseLang** | APL-inspired functional language: `avg cpu.usage @ \`host = \`server01`. Arrays, pipelines, lambdas. |
+| **Python Scripting (Viper)** | Embedded Python interpreter for scripting: `db_query()`, `db_insert()`, loops, conditionals — full Python with DB access. |
 | **InfluxDB Line Protocol** | Compatible ingestion format — existing Telegraf, Prometheus, and IoT collectors work out of the box. |
 | **LZ4 Compression** | Outer compression layer on encoded columns. ~4GB/s decompression speed. |
 | **Concurrent Reads** | `parking_lot::RwLock` for minimal contention between writers and readers. |
@@ -319,6 +320,57 @@ rev 1 2 3                     → 3 2 1
 
 ---
 
+## 🐍 Python Scripting (Viper)
+
+PulseDB embeds [Viper](../../rustpython-interp), a Python interpreter written in Rust, giving you full Python scripting with direct database access. Write analysis scripts, automate alerting, or interactively explore data — all without leaving PulseDB.
+
+```bash
+# Interactive REPL
+pulsedb python --data-dir /var/lib/pulsedb
+
+# Execute a script
+pulsedb python -f analysis.py --data-dir /var/lib/pulsedb
+
+# One-liner
+pulsedb python -e 'print(db_measurements())'
+```
+
+### Built-in Functions
+
+| Function | Description |
+|---|---|
+| `db_query(expr)` | Evaluate a PulseLang expression and return the result |
+| `db_insert(measurement, fields, [tags], [timestamp])` | Insert a data point |
+| `db_measurements()` | List all measurement names |
+| `db_fields(measurement)` | List field names for a measurement |
+
+### Examples
+
+```python
+# Insert data
+db_insert("cpu", {"usage": 72.5, "temp": 58.0}, {"host": "web01"})
+db_insert("cpu", {"usage": 85.3, "temp": 61.2}, {"host": "web02"})
+
+# Query with PulseLang from Python
+avg_usage = db_query("avg cpu.usage")
+print(avg_usage)
+
+# Alerting loop
+vals = db_query("cpu.usage")
+for v in vals:
+    if v > 80.0:
+        print("ALERT: high CPU " + str(v))
+
+# Use Python for complex analysis
+prices = db_query("crypto.price @ `symbol = `BTC")
+total = 0.0
+for p in prices:
+    total = total + p
+print("Mean: " + str(total / len(prices)))
+```
+
+---
+
 ## 🖥️ PulseUI — Real-Time Dashboard
 
 PulseUI is a React-based visualization dashboard that connects to PulseDB over HTTP and WebSocket. Write PulseLang queries and see results rendered live as charts, tables, and scalar cards — all updating in real-time via WebSocket subscriptions.
@@ -449,6 +501,7 @@ pulsedb_data/
 | Serialization | `serde`, `serde_json` | Config, WAL payload, HTTP responses |
 | Time | `chrono` | Partition key formatting |
 | Hashing | `xxhash-rust` (xxh3) | Fast non-crypto hashing |
+| Python | `viper` (embedded) | Python interpreter for scripting |
 | Memory Mapping | `memmap2` | Zero-copy segment reads |
 | Logging | `tracing`, `tracing-subscriber` | Structured logging |
 | Errors | `thiserror`, `anyhow` | Error handling |
@@ -485,8 +538,10 @@ src/
 │   ├── value.rs         # Runtime values (scalars, vectors, tables)
 │   ├── interpreter.rs   # Tree-walk interpreter
 │   └── db.rs            # Database integration (measurement resolution)
+├── python/              # Viper Python integration
+│   └── bridge.rs        # DB builtins, value conversion, REPL/script runner
 ├── server/              # TCP + HTTP network layer
-└── cli/                 # CLI commands (server, query, import, status, lang)
+└── cli/                 # CLI commands (server, query, import, status, lang, python)
 ```
 
 ---
@@ -550,6 +605,10 @@ cargo bench              # Run benchmarks
   - [x] Auto-detecting visualizations (charts, scalars, tables)
   - [x] Draggable panel grid with CodeMirror query editor
   - [x] Live crypto market data demo (CoinGecko feed)
+- [x] Python scripting (Viper) — embedded Python interpreter with DB builtins
+  - [x] `db_query()`, `db_insert()`, `db_measurements()`, `db_fields()`
+  - [x] Interactive REPL, script execution, one-liner mode
+  - [x] Value conversion between Viper and PulseLang types
 - [ ] Flamegraph profiling + hot-path optimization
 - [ ] GitHub Actions CI
 

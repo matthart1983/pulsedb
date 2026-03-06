@@ -145,8 +145,73 @@ Sleep 200ms
 Enter
 Sleep 1s
 
-# --- Exit ---
+# --- Exit PulseLang REPL ---
 Type "exit"
 Sleep 200ms
 Enter
+Sleep 1s
+
+# ===== Python (Viper) Integration =====
+Sleep 500ms
+
+# Launch the Python REPL
+Type "pulsedb python --data-dir /tmp/pulsedb_demo"
+Sleep 300ms
+Enter
+Sleep 1.5s
+
+# --- Insert data from Python ---
+Type "db_insert(\"cpu\", {\"usage\": 72.5, \"temp\": 58.0}, {\"host\": \"web01\"})"
+Sleep 200ms
+Enter
+Sleep 1s
+
+Type "db_insert(\"cpu\", {\"usage\": 85.3, \"temp\": 61.2}, {\"host\": \"web02\"})"
+Sleep 200ms
+Enter
+Sleep 1s
+
+Type "db_insert(\"cpu\", {\"usage\": 44.1, \"temp\": 49.8}, {\"host\": \"web03\"})"
+Sleep 200ms
+Enter
+Sleep 1s
+
+# --- Query back with PulseLang from Python ---
+Type "result = db_query(\"avg cpu.usage\")"
+Sleep 200ms
+Enter
+Sleep 1s
+
+Type "print(result)"
+Sleep 200ms
+Enter
+Sleep 1s
+
+# --- List measurements ---
+Type "print(db_measurements())"
+Sleep 200ms
+Enter
+Sleep 1s
+
+# --- Use Python logic with DB data ---
+Type@50ms "vals = db_query(\"cpu.usage\")"
+Sleep 200ms
+Enter
+Sleep 800ms
+
+Type@50ms "for v in vals:"
+Sleep 200ms
+Enter
+Type@50ms "    if v > 70.0:"
+Sleep 200ms
+Enter
+Type@50ms "        print(\"ALERT: high CPU \" + str(v))"
+Sleep 200ms
+Enter
+Enter
+Sleep 1.5s
+
+# --- Exit Python REPL ---
+Sleep 500ms
+Ctrl+D
 Sleep 1s
