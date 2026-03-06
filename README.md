@@ -20,11 +20,11 @@
 </p>
 
 <p align="center">
-  <b>A purpose-built time-series database written in pure Rust — columnar storage, type-aware compression, and dual query languages (SQL-like PulseQL + APL-inspired PulseLang). All from a single binary.</b>
+  <b>A purpose-built time-series database written in pure Rust — columnar storage, type-aware compression, dual query languages (SQL-like PulseQL + APL-inspired PulseLang), and embedded Python scripting. All from a single binary.</b>
 </p>
 
 <p align="center">
-  <img src="demo.gif" alt="PulseLang REPL Demo" width="800">
+  <img src="demo.gif" alt="PulseDB Demo — PulseLang + Python" width="800">
 </p>
 
 ---

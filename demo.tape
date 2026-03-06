@@ -1,4 +1,4 @@
-# PulseLang Demo — APL-inspired query language for PulseDB
+# PulseDB Demo — Dual query languages: PulseLang + Python (Viper)
 # Run: vhs demo.tape
 
 Output demo.gif
@@ -24,24 +24,14 @@ Enter
 Sleep 500ms
 Show
 
-# Launch the REPL
+# ===== Part 1: PulseLang — APL-inspired query language =====
+
 Type "pulsedb lang --data-dir /tmp/pulsedb_demo"
 Sleep 300ms
 Enter
 Sleep 1.5s
 
-# --- Scalar arithmetic ---
-Type "2 * 3 + 4"
-Sleep 200ms
-Enter
-Sleep 1s
-
-Type "(2 * 3) + 4"
-Sleep 200ms
-Enter
-Sleep 1s
-
-# --- Vectors ---
+# --- Vectors + arithmetic ---
 Type "1 2 3 4 5 + 10"
 Sleep 200ms
 Enter
@@ -52,29 +42,13 @@ Sleep 200ms
 Enter
 Sleep 1s
 
-Type "sums 1 2 3 4 5"
-Sleep 200ms
-Enter
-Sleep 1s
-
-# --- Assignment + Aggregation ---
+# --- Assignment + pipeline ---
 Type "vals: 10.0 20.0 30.0 40.0 50.0"
 Sleep 200ms
 Enter
-Sleep 1s
+Sleep 800ms
 
-Type "avg vals"
-Sleep 200ms
-Enter
-Sleep 1s
-
-Type "deltas vals"
-Sleep 200ms
-Enter
-Sleep 1s
-
-# --- Pipeline ---
-Type "1 2 3 4 5 |> sum"
+Type "vals |> avg"
 Sleep 200ms
 Enter
 Sleep 1s
@@ -90,44 +64,27 @@ Sleep 200ms
 Enter
 Sleep 1s
 
-# --- Time-Series Primitives ---
+# --- Time-series: EMA ---
 Type "prices: 100.0 102.0 101.0 104.0 103.0 106.0"
 Sleep 200ms
 Enter
 Sleep 800ms
-
-Type "mavg[3; prices]"
-Sleep 200ms
-Enter
-Sleep 1s
 
 Type "ema[0.3; prices]"
 Sleep 200ms
 Enter
 Sleep 1s
 
-# --- Structural ops ---
-Type "asc 3 1 4 1 5 9 2 6"
-Sleep 200ms
-Enter
-Sleep 1s
-
-Type "distinct 1 2 1 3 2 4 3"
-Sleep 200ms
-Enter
-Sleep 1s
-
-# --- Dict ---
+# --- Dict + JSON output ---
 Type "`a`b`c ! 10 20 30"
 Sleep 200ms
 Enter
 Sleep 1s
 
-# --- JSON output ---
 Type "\fmt json"
 Sleep 200ms
 Enter
-Sleep 800ms
+Sleep 600ms
 
 Type "`name`score ! 42 99"
 Sleep 200ms
@@ -139,28 +96,21 @@ Sleep 200ms
 Enter
 Sleep 600ms
 
-# --- Conditional ---
-Type "$[3 > 2; 1; 0]"
-Sleep 200ms
-Enter
-Sleep 1s
-
-# --- Exit PulseLang REPL ---
+# --- Exit PulseLang ---
 Type "exit"
 Sleep 200ms
 Enter
 Sleep 1s
 
-# ===== Python (Viper) Integration =====
+# ===== Part 2: Python (Viper) — scripting with DB access =====
 Sleep 500ms
 
-# Launch the Python REPL
 Type "pulsedb python --data-dir /tmp/pulsedb_demo"
 Sleep 300ms
 Enter
 Sleep 1.5s
 
-# --- Insert data from Python ---
+# --- Insert data ---
 Type "db_insert('cpu', {'usage': 72.5, 'temp': 58.0}, {'host': 'web01'})"
 Sleep 200ms
 Enter
@@ -176,7 +126,7 @@ Sleep 200ms
 Enter
 Sleep 1s
 
-# --- Query back with PulseLang from Python ---
+# --- Query back via PulseLang from Python ---
 Type "result = db_query('avg cpu.usage')"
 Sleep 200ms
 Enter
@@ -187,13 +137,18 @@ Sleep 200ms
 Enter
 Sleep 1s
 
-# --- List measurements ---
+# --- Introspection ---
 Type "print(db_measurements())"
 Sleep 200ms
 Enter
 Sleep 1s
 
-# --- Use Python logic with DB data ---
+Type "print(db_fields('cpu'))"
+Sleep 200ms
+Enter
+Sleep 1s
+
+# --- Python logic on DB data ---
 Type@50ms "vals = db_query('cpu.usage')"
 Sleep 200ms
 Enter
@@ -211,7 +166,7 @@ Enter
 Enter
 Sleep 1.5s
 
-# --- Exit Python REPL ---
+# --- Exit ---
 Sleep 500ms
 Ctrl+D
 Sleep 1s

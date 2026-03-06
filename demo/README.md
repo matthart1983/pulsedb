@@ -34,13 +34,7 @@ Try these in panels with the **⊙ Live** toggle enabled:
 
 ### Demo Python Queries (Viper)
 
-Launch the Python REPL connected to the same database:
-
-```bash
-pulsedb python --data-dir ./pulsedb_data
-```
-
-Then try:
+Switch any panel to Python mode with the **PY/PL** toggle, or use the pre-configured Python panels from the Demo button.
 
 ```python
 # List all measurements
@@ -67,8 +61,36 @@ for v in vals:
 print(db_fields("crypto"))
 ```
 
-Run a `.py` script:
+## Recording Demos
+
+### CLI Demo (demo.gif)
+
+Records the PulseLang REPL and Python REPL using [VHS](https://github.com/charmbracelet/vhs):
 
 ```bash
-pulsedb python -f my_analysis.py --data-dir ./pulsedb_data
+vhs demo.tape
 ```
+
+### UI Demo (ui-demo.gif)
+
+Records the web dashboard using Playwright. Shows PulseLang live panels, Python panels, chart interaction, query editing, and PY/PL language toggling.
+
+**Prerequisites:**
+1. PulseDB server + UI running: `./dev.sh`
+2. Market data feed: `node demo/market-feed.mjs`
+3. Wait a few seconds for data to accumulate
+
+**Record:**
+```bash
+node demo/record-demo.mjs
+```
+
+**What gets recorded:**
+1. Click Demo → loads 8 panels (6 PulseLang + 2 Python)
+2. BTC chart crosshair interaction
+3. Run Python DB Overview panel (shows measurements + fields)
+4. Run Python Price Alerts panel (BTC high/low/spread analysis)
+5. Edit PulseLang panel → EMA pipeline query
+6. Toggle ETH panel from PulseLang to Python, write + run query
+7. Edit Python panel → custom measurement analysis
+8. Final hold showing all live data

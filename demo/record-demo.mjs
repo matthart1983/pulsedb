@@ -32,7 +32,7 @@ async function main() {
   // Brief pause on empty state
   await sleep(800)
 
-  // --- Scene 1: Click Demo to load 4 live panels ---
+  // --- Scene 1: Click Demo to load all panels (PulseLang + Python) ---
   console.log('  ▸ Loading demo dashboard')
   await page.click('button:has-text("Demo")')
   await sleep(4000) // watch data populate
@@ -53,8 +53,31 @@ async function main() {
   }
   await sleep(1500)
 
-  // --- Scene 3: Edit Market Overview → EMA pipeline on live BTC prices ---
-  console.log('  ▸ Editing query → EMA pipeline')
+  // --- Scene 3: Run the Python DB Overview panel ---
+  console.log('  ▸ Running Python DB Overview panel')
+  const pyOverview = page.locator('div:has(> div.drag-handle span:has-text("DB Overview"))')
+  if (await pyOverview.first().isVisible()) {
+    // Click the run button to execute the Python query
+    const runBtn = pyOverview.first().locator('button[title="Refresh"]')
+    if (await runBtn.isVisible()) {
+      await runBtn.click()
+      await sleep(2500) // wait for Python execution
+    }
+  }
+
+  // --- Scene 4: Run the Python Price Alerts panel ---
+  console.log('  ▸ Running Python Price Alerts panel')
+  const pyAlerts = page.locator('div:has(> div.drag-handle span:has-text("Price Alerts"))')
+  if (await pyAlerts.first().isVisible()) {
+    const runBtn = pyAlerts.first().locator('button[title="Refresh"]')
+    if (await runBtn.isVisible()) {
+      await runBtn.click()
+      await sleep(2500) // wait for Python execution + output display
+    }
+  }
+
+  // --- Scene 5: Edit Market Overview → EMA pipeline on live BTC prices ---
+  console.log('  ▸ Editing PulseLang query → EMA pipeline')
   const marketPanel = page.locator('div:has(> div.drag-handle span:has-text("Market Overview"))')
   if (await marketPanel.first().isVisible()) {
     const editor = marketPanel.first().locator('.cm-content')
@@ -70,20 +93,43 @@ async function main() {
     }
   }
 
-  // --- Scene 4: Edit ETH panel → pipeline: spread (max - min) ---
-  console.log('  ▸ Editing query → spread calculation')
+  // --- Scene 6: Toggle a PulseLang panel to Python and write a query ---
+  console.log('  ▸ Toggling ETH panel to Python')
   const ethPanel = page.locator('div:has(> div.drag-handle span:has-text("ETH Price"))')
   if (await ethPanel.first().isVisible()) {
+    // Click the PY/PL toggle button to switch to Python
+    const langToggle = ethPanel.first().locator('button:has-text("PL")')
+    if (await langToggle.isVisible()) {
+      await langToggle.click()
+      await sleep(500)
+    }
+    // Now write a Python query in the editor
     const editor = ethPanel.first().locator('.cm-content')
     if (await editor.isVisible()) {
       await editor.click()
       await sleep(200)
       await page.keyboard.press('Meta+a')
       await sleep(150)
-      await typeSlowly(page, '(max crypto.price @ `symbol = `BTC) - (min crypto.price @ `symbol = `BTC)', 25)
+      await typeSlowly(page, 'prices = db_query(\'crypto.price @ `symbol = `ETH\')\nprint(\'ETH points: \' + str(len(prices)))', 25)
       await sleep(500)
       await page.keyboard.press('Meta+Enter')
-      await sleep(3000)
+      await sleep(2500)
+    }
+  }
+
+  // --- Scene 7: Edit Python Price Alerts → custom analysis ---
+  console.log('  ▸ Editing Python panel → custom analysis')
+  if (await pyAlerts.first().isVisible()) {
+    const editor = pyAlerts.first().locator('.cm-content')
+    if (await editor.isVisible()) {
+      await editor.click()
+      await sleep(200)
+      await page.keyboard.press('Meta+a')
+      await sleep(150)
+      await typeSlowly(page, 'ms = db_measurements()\nfor m in ms:\n    print(m + \': \' + str(db_fields(m)))', 25)
+      await sleep(500)
+      await page.keyboard.press('Meta+Enter')
+      await sleep(2500)
     }
   }
 
