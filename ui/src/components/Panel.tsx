@@ -7,6 +7,7 @@ import { QueryEditor } from './QueryEditor'
 import { TimeSeriesChart } from './TimeSeriesChart'
 import { ScalarCard } from './ScalarCard'
 import { DataTable } from './DataTable'
+import { PythonOutput } from './PythonOutput'
 
 interface PanelProps {
   panelId: string
@@ -36,6 +37,11 @@ export function Panel({ panelId }: PanelProps) {
     }
   }, [isLive, panel?.query, panel?.refreshInterval, subscribe, unsubscribe])
 
+  const toggleLang = useCallback(() => {
+    const newLang = panel?.lang === 'python' ? 'pulselang' : 'python'
+    updatePanel(panelId, { lang: newLang })
+  }, [panelId, panel?.lang, updatePanel])
+
   if (!panel) return null
 
   const vizType = detectVizType(result)
@@ -49,6 +55,17 @@ export function Panel({ panelId }: PanelProps) {
           {panel.title || 'Untitled'}
         </span>
         <div className="flex items-center gap-1">
+          <button
+            onClick={toggleLang}
+            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold transition-colors ${
+              panel.lang === 'python'
+                ? 'bg-chart-amber/20 text-chart-amber'
+                : 'bg-chart-blue/20 text-chart-blue'
+            }`}
+            title={`Switch to ${panel.lang === 'python' ? 'PulseLang' : 'Python'}`}
+          >
+            {panel.lang === 'python' ? 'PY' : 'PL'}
+          </button>
           <button
             onClick={() => execute()}
             className="p-1 rounded hover:bg-pulse-overlay text-pulse-text-muted hover:text-pulse-text transition-colors"
@@ -87,7 +104,9 @@ export function Panel({ panelId }: PanelProps) {
         {/* Visualization */}
         <div className="flex-1 min-h-0">
           {result ? (
-            vizType === 'timeseries' ? (
+            result.type === 'python_output' ? (
+              <PythonOutput result={result} />
+            ) : vizType === 'timeseries' ? (
               <TimeSeriesChart result={result} />
             ) : vizType === 'scalar' ? (
               <ScalarCard result={result} title={panel.title} />

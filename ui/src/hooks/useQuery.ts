@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { queryLang } from '../api/client'
+import { queryLang, queryPython } from '../api/client'
 import { useDashboardStore } from '../stores/dashboard'
 import type { LangResponse } from '../api/types'
 
@@ -14,7 +14,8 @@ export function usePanelQuery(panelId: string) {
 
     updatePanel(panelId, { loading: true, error: null })
     try {
-      const result = await queryLang(q)
+      const queryFn = panel?.lang === 'python' ? queryPython : queryLang
+      const result = await queryFn(q)
       updatePanel(panelId, { result, loading: false, query: q })
     } catch (e) {
       updatePanel(panelId, {
@@ -22,7 +23,7 @@ export function usePanelQuery(panelId: string) {
         error: e instanceof Error ? e.message : 'Query failed',
       })
     }
-  }, [panelId, panel?.query, updatePanel])
+  }, [panelId, panel?.query, panel?.lang, updatePanel])
 
   useEffect(() => {
     if (intervalRef.current) {
@@ -56,6 +57,8 @@ export function detectVizType(result: LangResponse | null): 'timeseries' | 'scal
     case 'int[]':
     case 'float[]':
       return 'timeseries'
+    case 'python_output':
+      return 'table'
     default:
       return 'table'
   }

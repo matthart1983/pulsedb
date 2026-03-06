@@ -85,6 +85,7 @@ pub async fn run_http_server(db: Arc<Database>, addr: &str) -> anyhow::Result<()
     let app = Router::new()
         .route("/query", post(query_handler))
         .route("/lang", post(lang_handler))
+        .route("/python", post(python_handler))
         .route("/write", post(write_handler))
         .route("/health", get(health_handler))
         .route("/status", get(status_handler))
@@ -301,6 +302,45 @@ async fn lang_handler(
     let elapsed = start.elapsed().as_nanos() as u64;
 
     Ok(Json(value_to_json(&result, elapsed)))
+}
+
+async fn python_handler(
+    State(db): State<AppState>,
+    Json(req): Json<QueryRequest>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
+    let start = std::time::Instant::now();
+
+    // Python execution must happen on a thread with thread-local DB handle
+    let db_clone = db.clone();
+    let code = req.q.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        crate::python::bridge::exec_python_code(&db_clone, &code)
+    })
+    .await
+    .map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("task join error: {e}"),
+            }),
+        )
+    })?
+    .map_err(|e| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                error: e,
+            }),
+        )
+    })?;
+
+    let elapsed = start.elapsed().as_nanos() as u64;
+
+    Ok(Json(serde_json::json!({
+        "type": "python_output",
+        "output": result,
+        "elapsed_ns": elapsed,
+    })))
 }
 
 async fn write_handler(

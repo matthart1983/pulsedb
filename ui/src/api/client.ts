@@ -24,6 +24,13 @@ export async function queryLang(q: string): Promise<LangResponse> {
   })
 }
 
+export async function queryPython(q: string): Promise<LangResponse> {
+  return request<LangResponse>('/api/python', {
+    method: 'POST',
+    body: JSON.stringify({ q }),
+  })
+}
+
 export async function getStatus(): Promise<StatusResponse> {
   return request<StatusResponse>('/api/status')
 }

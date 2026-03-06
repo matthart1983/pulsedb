@@ -415,6 +415,37 @@ fn native_db_fields_interp(args: &[InterpValue]) -> Result<InterpValue, String> 
     Ok(bytecode_to_interp_val(&result))
 }
 
+/// Execute Python code against a PulseDB database and return captured output lines.
+///
+/// Used by the HTTP API to run Python from the web UI.
+pub fn exec_python_code(db: &Arc<Database>, code: &str) -> Result<Vec<String>, String> {
+    DB_HANDLE.with(|cell| {
+        *cell.borrow_mut() = Some(db.clone());
+    });
+
+    let mut interner = Interner::new();
+    let mut lexer = Lexer::new(code);
+    let tokens = lexer.tokenize()?;
+    let stmts = {
+        let mut parser = Parser::new(tokens, &mut interner);
+        parser.parse()?
+    };
+
+    let code_obj = viper::compiler::compile_module(&stmts, &mut interner);
+    let mut vm = VM::new(interner);
+    vm.set_suppress_output(true);
+    register_builtins_vm(&mut vm);
+    vm.run(&code_obj)?;
+
+    let output = vm.get_output().to_vec();
+
+    DB_HANDLE.with(|cell| {
+        *cell.borrow_mut() = None;
+    });
+
+    Ok(output)
+}
+
 /// Run a Python script file against a PulseDB database using the bytecode VM.
 pub fn run_python_file(db: Arc<Database>, path: &Path) -> Result<()> {
     let code = std::fs::read_to_string(path)

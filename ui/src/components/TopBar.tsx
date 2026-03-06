@@ -19,18 +19,12 @@ export function TopBar() {
 
     const ts = Date.now()
     const demoConfigs = [
+      // --- PulseLang panels ---
       {
         id: `demo-btc-${ts}`,
         type: 'editor' as const,
         title: 'BTC Price',
         query: 'last crypto.price @ `symbol = `BTC',
-        refreshInterval: 1000,
-      },
-      {
-        id: `demo-eth-${ts}`,
-        type: 'editor' as const,
-        title: 'ETH Price',
-        query: 'last crypto.price @ `symbol = `ETH',
         refreshInterval: 1000,
       },
       {
@@ -41,22 +35,62 @@ export function TopBar() {
         refreshInterval: 1000,
       },
       {
+        id: `demo-eth-${ts}`,
+        type: 'editor' as const,
+        title: 'ETH Price',
+        query: 'last crypto.price @ `symbol = `ETH',
+        refreshInterval: 1000,
+      },
+      {
         id: `demo-market-${ts}`,
         type: 'editor' as const,
         title: 'Market Overview',
         query: 'market',
         refreshInterval: 2000,
       },
+      {
+        id: `demo-ema-${ts}`,
+        type: 'editor' as const,
+        title: 'BTC EMA Pipeline',
+        query: 'crypto.price @ `symbol = `BTC |> {ema[0.1; x]}',
+        refreshInterval: 2000,
+      },
+      {
+        id: `demo-spread-${ts}`,
+        type: 'editor' as const,
+        title: 'BTC Spread',
+        query: '(max crypto.price @ `symbol = `BTC) - (min crypto.price @ `symbol = `BTC)',
+        refreshInterval: 2000,
+      },
+      // --- Python panels ---
+      {
+        id: `demo-py-overview-${ts}`,
+        type: 'editor' as const,
+        title: '🐍 DB Overview',
+        query: 'measurements = db_measurements()\nfor m in measurements:\n    fields = db_fields(m)\n    print(m + ": " + str(fields))',
+        refreshInterval: 0,
+        lang: 'python' as const,
+      },
+      {
+        id: `demo-py-alert-${ts}`,
+        type: 'editor' as const,
+        title: '🐍 Price Alerts',
+        query: 'prices = db_query("crypto.price @ `symbol = `BTC")\nhigh = 0.0\nlow = 999999.0\nfor p in prices:\n    if p > high:\n        high = p\n    if p < low:\n        low = p\nspread = high - low\nprint("BTC High: " + str(high))\nprint("BTC Low:  " + str(low))\nprint("Spread:   " + str(spread))\nif spread > 100.0:\n    print("ALERT: High volatility!")',
+        refreshInterval: 0,
+        lang: 'python' as const,
+      },
     ]
 
     // Atomic state replace — avoids intermediate empty state
     useDashboardStore.getState().setPanels(demoConfigs)
 
-    // Subscribe via WebSocket after panels are mounted
+    // Subscribe live PulseLang panels via WebSocket after panels are mounted
     setTimeout(() => {
       demoConfigs.forEach((cfg) => {
-        useDashboardStore.getState().updatePanel(cfg.id, { live: true })
-        pulseWs.subscribe(cfg.id, cfg.query, cfg.refreshInterval)
+        if (cfg.refreshInterval > 0 && (!('lang' in cfg) || cfg.lang !== 'python')) {
+          useDashboardStore.getState().updatePanel(cfg.id, { live: true })
+          pulseWs.subscribe(cfg.id, cfg.query, cfg.refreshInterval)
+        }
       })
     }, 500)
   }

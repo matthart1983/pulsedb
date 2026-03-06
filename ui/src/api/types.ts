@@ -30,7 +30,13 @@ export interface DictResult {
   elapsed_ns: number
 }
 
-export type LangResponse = ScalarResult | VectorResult | TableResult | DictResult | {
+export interface PythonResult {
+  type: 'python_output'
+  output: string[]
+  elapsed_ns: number
+}
+
+export type LangResponse = ScalarResult | VectorResult | TableResult | DictResult | PythonResult | {
   type: string
   elapsed_ns: number
   [key: string]: unknown
