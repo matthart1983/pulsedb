@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <b>A purpose-built time-series database written in pure Rust — columnar storage, type-aware compression, dual query languages (SQL-like PulseQL + APL-inspired PulseLang), and embedded Python scripting. All from a single binary.</b>
+  <b>A purpose-built time-series database written in pure Rust — columnar storage, type-aware compression, dual query languages (SQL-like PulseQL + APL-inspired PulseLang), and an embedded Python-syntax scripting interpreter (Viper). All from a single binary.</b>
 </p>
 
 <p align="center">
@@ -42,7 +42,7 @@
 | **Time-Based Partitioning** | Hourly partition directories for fast time-range pruning. Drop old data by deleting directories. |
 | **PulseQL** | SQL-like query language: `SELECT mean(cpu) FROM metrics WHERE host='a' GROUP BY time(5m)`. |
 | **PulseLang** | APL-inspired functional language: `avg cpu.usage @ \`host = \`server01`. Arrays, pipelines, lambdas. |
-| **Python Scripting (Viper)** | Embedded Python interpreter for scripting: `db_query()`, `db_insert()`, loops, conditionals — full Python with DB access. |
+| **Python Scripting (Viper)** | Embedded Python-syntax interpreter ([viper-py](https://crates.io/crates/viper-py)) with direct DB access: `db_query()`, `db_insert()`, loops, conditionals, builtins (`str`, `int`, `len`, `range`, `sum`, `max`, `min`, `abs`). A focused subset of Python — see [Python Scripting](#-python-scripting-viper) for what's supported. |
 | **InfluxDB Line Protocol** | Compatible ingestion format — existing Telegraf, Prometheus, and IoT collectors work out of the box. |
 | **LZ4 Compression** | Outer compression layer on encoded columns. ~4GB/s decompression speed. |
 | **Concurrent Reads** | `parking_lot::RwLock` for minimal contention between writers and readers. |
@@ -322,7 +322,9 @@ rev 1 2 3                     → 3 2 1
 
 ## 🐍 Python Scripting (Viper)
 
-PulseDB embeds [Viper](../../rustpython-interp), a Python interpreter written in Rust, giving you full Python scripting with direct database access. Write analysis scripts, automate alerting, or interactively explore data — all without leaving PulseDB.
+PulseDB embeds [viper-py](https://crates.io/crates/viper-py), a small Python-syntax interpreter written in Rust, for analysis scripts, alerting automation, and interactive data exploration — all without leaving PulseDB.
+
+> **Scope honesty:** Viper implements a focused subset of Python — enough to write useful scripts against the database, not enough to run arbitrary CPython programs. See [Python language support](#python-language-support) below for what works and what doesn't.
 
 ```bash
 # Interactive REPL
@@ -337,12 +339,30 @@ pulsedb python -e 'print(db_measurements())'
 
 ### Built-in Functions
 
+#### Database access
 | Function | Description |
 |---|---|
 | `db_query(expr)` | Evaluate a PulseLang expression and return the result |
 | `db_insert(measurement, fields, [tags], [timestamp])` | Insert a data point |
 | `db_measurements()` | List all measurement names |
 | `db_fields(measurement)` | List field names for a measurement |
+
+#### Stdlib (provided by viper-py)
+| Function | Description |
+|---|---|
+| `str(x)` / `int(x)` / `float(x)` / `bool(x)` | Type conversion |
+| `len(seq)` | Length of list, dict, or string |
+| `range(stop)` / `range(start, stop)` / `range(start, stop, step)` | Eager integer list (not a lazy iterator) |
+| `repr(x)` | Quoted representation |
+| `abs(x)`, `min(...)`, `max(...)`, `sum(list)` | Numeric helpers |
+
+### Python language support
+
+**Works:** assignments, arithmetic, comparisons, `if`/`elif`/`else`, `while` and `for` loops, `def` functions, lambdas, lists, dicts, indexing, slicing, string concatenation, multi-arg `print`, the builtins listed above.
+
+**Not implemented:** classes (`class`), decorators, generators (`yield`), `try`/`except`, `import` (no module system — no `os`, `sys`, `json`, `math`, etc.), comprehensions, f-strings, `with` statements, async, type hints (parsed but ignored). If you need any of these, drop to PulseQL/PulseLang, or query PulseDB over HTTP from real CPython.
+
+The goal is "Python you can read" for analysis scripts, not a CPython replacement.
 
 ### Examples
 
